@@ -203,13 +203,11 @@ const sendEmail = async (email, code, username) => {
   };
 
   try {
-    const sentEmail = await transporter.sendMail(mailOptions);
-    if (sentEmail) {
-      return { text: "Mail sent", status: "success" };
-    }
+    await transporter.sendMail(mailOptions);
+    return { success: true, text: "Mail sent" }; // Simplified return object
   } catch (error) {
-    console.log(error);
-    return { text: "Failed to send mail", status: "fail" };
+    console.error("Nodemailer error: ", error);
+    return { success: false, text: "Failed to send mail" };
   }
 };
 

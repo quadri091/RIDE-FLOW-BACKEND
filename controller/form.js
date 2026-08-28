@@ -116,32 +116,32 @@ const signup = async (req, res) => {
     if (suspendedUser) {
       return res.status(400).json({ message: "User is suspended already" });
     }
+
     const hashedPassword = await bcrypt.hash(password, 12);
+    const code = await generate();
 
     const user = await usermodel.create({
       email,
       password: hashedPassword,
       userName,
       number,
+      otp: code,
+      otpExpiry: Date.now() + 10 * 60 * 1000,
     });
 
-    const code = await generate();
-    const updatedUser = await usermodel.findOneAndUpdate(
-      { email: user.email },
-      { $set: { otp: code, otpExpiry: Date.now() + 10 * 60 * 1000 } },
-      { new: true },
-    );
-
-    const send = await sendEmail(user.email, code, user.userName);
-    if (!send) {
-      return res.status(400).json({ message: "Failed to send OTP email" });
+    const emailResult = await sendEmail(user.email, code, user.userName);
+    if (!emailResult.success) {
+      return res.status(500).json({ message: "Failed to send OTP email" });
     }
-    const io = req.app.get("io");
-    io.to("admins").emit("new:signup", updatedUser);
 
-    return res
-      .status(200)
-      .json({ message: "OTP sent to your email for verification" });
+    const io = req.app.get("io");
+    io.to("admins").emit("new:signup", user);
+
+    return res.status(200).json({
+      message: "OTP sent to your email for verification",
+      email: user.email,
+      status: true,
+    });
   } catch (error) {
     return res
       .status(500)
@@ -328,9 +328,11 @@ const driverSignup = async (req, res) => {
     const io = req.app.get("io");
     io.to("admins").emit("new:signup", updatedUser);
 
-    return res
-      .status(200)
-      .json({ message: "OTP sent to your email for verification" });
+    return res.status(200).json({
+      message: "OTP sent to your email for verification",
+      status: true,
+      email: user.email,
+    });
   } catch (error) {
     console.log(error);
     return res.status(500).json({ message: "Server error" });

@@ -25,7 +25,7 @@ const io = new Server(server, {
   cors: { origin: "*" },
 });
 
-const port = process.env.PORT || 8000;
+const port = 8000;
 connect();
 
 app.use(express.json({ limit: "20mb" }));
