@@ -8,12 +8,12 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const logoSvg = `<svg xmlns="http://www.w3.org/2000/svg" height="26px" viewBox="0 -960 960 960" width="26px" fill="#ffffff"><path d="M155-195q-35-35-35-85H40v-440q0-33 23.5-56.5T120-800h560v160h120l120 160v200h-80q0 50-35 85t-85 35q-50 0-85-35t-35-85H360q0 50-35 85t-85 35q-50 0-85-35Zm113.5-56.5Q280-263 280-280t-11.5-28.5Q257-320 240-320t-28.5 11.5Q200-297 200-280t11.5 28.5Q223-240 240-240t28.5-11.5ZM120-360h32q17-18 39-29t49-11q27 0 49 11t39 29h272v-360H120v360Zm628.5 108.5Q760-263 760-280t-11.5-28.5Q737-320 720-320t-28.5 11.5Q680-297 680-280t11.5 28.5Q703-240 720-240t28.5-11.5ZM680-440h170l-90-120h-80v120ZM360-540Z"/></svg>`;
-
 /**
  * Shared RideFlow email shell — cream background, white rounded card,
  * black type, green accent — matching the app's light UI.
  */
+const logoSvg = `<svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="#1EA850"><path d="M195-195q-35-35-35-85H60l18-80h113q17-19 40-29.5t49-10.5q26 0 49 10.5t40 29.5h167l84-360H182l4-17q6-28 27.5-45.5T264-800h456l-37 160h117l120 160-40 200h-80q0 50-35 85t-85 35q-50 0-85-35t-35-85H400q0 50-35 85t-85 35q-50 0-85-35Zm442-245h193l4-21-74-99h-95l-28 120Zm-19-273 2-7-84 360 2-7 34-146 46-200ZM20-427l20-80h220l-20 80H20Zm80-146 20-80h260l-20 80H100Zm180 333q17 0 28.5-11.5T320-280q0-17-11.5-28.5T280-320q-17 0-28.5 11.5T240-280q0 17 11.5 28.5T280-240Zm400 0q17 0 28.5-11.5T720-280q0-17-11.5-28.5T680-320q-17 0-28.5 11.5T640-280q0 17 11.5 28.5T680-240Z"/></svg>`;
+
 const buildTemplate = ({
   eyebrow,
   heading,
@@ -30,7 +30,7 @@ const buildTemplate = ({
   const noteColors =
     noteTone === "danger"
       ? { bg: "#fdf2f2", border: "#f3caca", title: "#b42318" }
-      : { bg: "#f0fdf4", border: "#bbf0cf", title: "#15803d" };
+      : { bg: "#ecf7ee", border: "#00b749ae", title: "#00b74a" };
 
   const noteListHtml = noteItems
     .map((item) => `<li style="margin:0 0 6px 0;">${item}</li>`)
@@ -55,12 +55,12 @@ const buildTemplate = ({
                 <table role="presentation" style="margin:0 auto;">
                   <tr>
                     <td style="padding-right:10px;">
-                      <div style="width:38px;height:38px;border-radius:10px;background-color:#111111;display:flex;align-items:center;justify-content:center;">
+                      <div style="width:38px;height:38px;border-radius:50%;background-color:#000000;display:flex;align-items:center;justify-content:center;">
                         <table role="presentation" style="width:100%;height:100%;"><tr><td align="center" valign="middle">${logoSvg}</td></tr></table>
                       </div>
                     </td>
                     <td>
-                      <span style="font-size:20px;font-weight:800;color:#111111;letter-spacing:-0.3px;">RideFlow</span>
+                      <span style="font-size:20px;font-weight:700;color:#111111;letter-spacing:-0.2px;">RIDE-FLOW</span>
                     </td>
                   </tr>
                 </table>
@@ -69,18 +69,18 @@ const buildTemplate = ({
 
             <!-- Card -->
             <tr>
-              <td style="background-color:#ffffff;border-radius:24px;border:1px solid #eeece3;overflow:hidden;">
+              <td style="background-color:#ffffff;border-radius:20px;border:1px solid #ebebea;overflow:hidden;">
                 <table role="presentation" style="width:100%;border-collapse:collapse;">
 
                   <tr>
                     <td style="padding:40px 40px 0 40px;text-align:center;">
-                      <span style="display:inline-block;padding:6px 14px;border-radius:20px;background-color:#eafcef;color:#16a34a;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">
+                      <span style="display:inline-block;padding:6px 14px;border-radius:15px;background-color:#e5f0e6;border:0.8px solid #00b749ae;color:#00b74a;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">
                         ${eyebrow}
                       </span>
-                      <h1 style="margin:20px 0 10px 0;color:#111111;font-size:26px;font-weight:800;letter-spacing:-0.5px;">
+                      <h1 style="margin:20px 0 10px 0;color:#111111;font-size:26px;font-weight:700;letter-spacing:-0.5px;">
                         ${heading}
                       </h1>
-                      <p style="margin:0 0 28px 0;color:#6b6b6b;font-size:15px;line-height:23px;">
+                      <p style="margin:0 0 28px 0;color:#838380;font-size:15px;line-height:23px;">
                         ${intro}
                       </p>
                     </td>
@@ -89,21 +89,21 @@ const buildTemplate = ({
                   <!-- Account details -->
                   <tr>
                     <td style="padding:0 40px;">
-                      <table role="presentation" style="width:100%;background-color:#faf8f2;border-radius:16px;border:1px solid #f0eee5;">
+                      <table role="presentation" style="width:100%;background-color:#f9f9f9;border-radius:16px;border:1px solid #d6d6d6;">
                         <tr>
                           <td style="padding:18px 22px;">
-                            <p style="margin:0;color:#9a9890;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">
+                            <p style="margin:0;color:#626262;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">
                               ${detailsLabel}
                             </p>
                             <p style="margin:8px 0 2px 0;color:#111111;font-size:17px;font-weight:700;">
                               ${username}
                             </p>
-                            <p style="margin:0;color:#6b6b6b;font-size:14px;">
+                            <p style="margin:0;color:#626262;font-size:14px;">
                               ${detailLine}
                             </p>
                             ${
                               badge
-                                ? `<span style="display:inline-block;margin-top:12px;padding:4px 12px;background-color:#eafcef;border:1px solid #bbf0cf;border-radius:20px;color:#16a34a;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">${badge}</span>`
+                                ? `<span style="display:inline-block;margin-top:12px;padding:4px 12px;background-color:#e5f0e6;border:0.8px solid #00b749ae;border-radius:15px;color:#00b74a;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">${badge}</span>`
                                 : ""
                             }
                           </td>
@@ -119,7 +119,7 @@ const buildTemplate = ({
                         <tr>
                           <td align="center">
                             <div style="display:inline-block;padding:22px 44px;background-color:#111111;border-radius:16px;">
-                              <span style="font-size:36px;font-weight:800;color:#ffffff;letter-spacing:10px;font-family:'Courier New',monospace;">
+                              <span style="font-size:36px;font-weight:700;color:#ffffff;letter-spacing:10px;font-family:'Courier New',monospace;">
                                 ${code}
                               </span>
                             </div>
@@ -127,7 +127,7 @@ const buildTemplate = ({
                         </tr>
                       </table>
                       <p style="margin:16px 0 0 0;color:#9a9890;font-size:13px;">
-                        This code expires in <strong style="color:#16a34a;">10 minutes</strong>
+                        This code expires in <strong style="color:#00b74a;">10 minutes</strong>
                       </p>
                     </td>
                   </tr>
@@ -141,7 +141,7 @@ const buildTemplate = ({
                             <p style="margin:0 0 10px 0;color:${noteColors.title};font-size:14px;font-weight:700;">
                               ${noteTitle}
                             </p>
-                            <ul style="margin:0;padding-left:18px;color:#6b6b6b;font-size:13px;line-height:21px;">
+                            <ul style="margin:0;padding-left:18px;color:#626262;font-size:13px;line-height:21px;">
                               ${noteListHtml}
                             </ul>
                           </td>
