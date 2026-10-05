@@ -47,36 +47,32 @@ const createAdmin = async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
+    const code = await generate();
     const user = await staffModel.create({
       email,
       password: hashedPassword,
       userName,
       number,
-      profileImage: role.toLowerCase() == "admin" ? "" : "",
       role,
     });
 
-    const code = await generate();
-    const updatedUser = await staffModel.findOneAndUpdate(
-      { email: user.email },
-      { $set: { otp: code, otpExpiry: Date.now() + 10 * 60 * 1000 } },
-      { new: true },
-    );
-    const send = await sendAdminEmail(
-      user.email,
-      code,
-      user.userName,
-      user.role == "superadmin" ? "Super Admin" : "Admin",
-    );
-    if (!send) {
-      return res.status(400).json({ message: "Failed to send OTP email" });
+    //  await sendAdminEmail( /// here send email should be notify
+    //     user.email,
+    //     code,
+    //     user.userName,
+    //     user.role == "superadmin" ? "Super Admin" : "Admin",
+    //   );
+    if (!user) {
+      return res.status(400).json({ message: "Failed To Create Account" });
     }
 
-    await broadCastStaff(req.app.get("io"), "staff:created", updatedUser);
+    await broadCastStaff(req.app.get("io"), "staff:created", user);
 
-    return res
-      .status(200)
-      .json({ message: "OTP sent to your email for verification" });
+    return res.status(200).json({
+      message: "Log In Regularly For Approval From Admin",
+      role: user.role,
+      status: true,
+    });
   } catch (error) {
     return res
       .status(500)
@@ -114,7 +110,7 @@ const approveUser = async (req, res) => {
     const user = await staffModel.findByIdAndUpdate(
       id,
       { $set: { isApproved: true } },
-      { new: true },
+      { returnDocument: "after" },
     );
 
     await broadCastStaff(req.app.get("io"), "staff:approved", user);
@@ -138,6 +134,8 @@ const getAllStaff = async (req, res) => {
       .json({ message: "Internal Server Error", error: error.message });
   }
 };
+
+// send admin email should suppose to be verified email
 
 const staffLogin = async (req, res) => {
   try {
@@ -170,7 +168,7 @@ const staffLogin = async (req, res) => {
     const verified = await staffModel.findOneAndUpdate(
       { email: find.email },
       { $set: { token } },
-      { new: true },
+      { returnDocument: "after" },
     );
 
     if (!verified) {
@@ -179,6 +177,7 @@ const staffLogin = async (req, res) => {
 
     return res.status(200).json({
       message: "Login Successful",
+      status: true,
       data: { role: verified.role, token },
     });
   } catch (error) {
@@ -192,10 +191,7 @@ const verifyStaffToken = async (req, res) => {
     const token = req.headers.authorization.split(" ")[1];
     if (!token) return res.status(400).json({ message: "Token is required" });
     const jwtVerify = await jwt.verify(token, process.env.jwtSecretKey);
-    if (!jwtVerify)
-      return res
-        .status(400)
-        .json({ status: "invalid", message: "Invalid Token" });
+    if (!jwtVerify) return res.status(400).json({ message: "Invalid Token" });
 
     const find = await staffModel
       .findOne({ email: jwtVerify.email })

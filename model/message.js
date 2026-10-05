@@ -5,6 +5,9 @@ const messageSchema = new mongoose.Schema({
   sender: {
     id: { type: mongoose.Schema.Types.ObjectId, required: true },
     name: { type: String, required: true },
+    profileImage: {
+      type: String,
+    },
     role: {
       type: String,
       enum: ["rider", "driver", "admin", "superadmin"],
@@ -16,6 +19,9 @@ const messageSchema = new mongoose.Schema({
   receiver: {
     id: { type: mongoose.Schema.Types.ObjectId, required: true },
     name: { type: String, required: true },
+    profileImage: {
+      type: String,
+    },
     role: {
       type: String,
       enum: ["rider", "driver", "admin", "superadmin"],

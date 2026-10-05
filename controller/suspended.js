@@ -65,7 +65,7 @@ const suspendUser = async (req, res) => {
     await usermodel.findByIdAndUpdate(
       userId,
       { $set: { suspended: true } },
-      { new: true },
+      { returnDocument: "after" },
     );
 
     scheduleAutoUnsuspend(userId, suspendedUntil, req.app.get("io"));
@@ -111,7 +111,7 @@ const unsuspendUser = async (req, res) => {
     await usermodel.findByIdAndUpdate(
       userId,
       { $set: { suspended: false } },
-      { new: true },
+      { returnDocument: "after" },
     );
 
     const io = req.app.get("io");
@@ -199,7 +199,7 @@ const runAutoUnsuspend = async (userId, io) => {
     await usermodel.findByIdAndUpdate(
       userId,
       { $set: { suspended: false } },
-      { new: true },
+      { returnDocument: "after" },
     );
 
     if (!suspension) {

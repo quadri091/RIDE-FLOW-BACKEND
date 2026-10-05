@@ -7,11 +7,7 @@ const jwt = require("jsonwebtoken");
 const { uploadImage } = require("../utils/uploader.js");
 const generateOTP = require("otp-generator");
 const { getSocketsByUserId } = require("../socket.js");
-const {
-  changeEmail,
-  changePassword,
-  sendNumberCode,
-} = require("../utils/send-to-email.js");
+const { changeEmail } = require("../utils/send-to-email.js");
 // otp
 const generate = async () => {
   const code = generateOTP.generate(6, {
@@ -27,8 +23,12 @@ const generate = async () => {
 // PASSWORD
 
 const getResetCode = async (req, res) => {
+  const { email } = req.params;
+  if (!email) {
+    return res.status(400).json({ message: "Email is required" });
+  }
   try {
-    const user = await usermodel.findOne({ email: req.user.email });
+    const user = await usermodel.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -41,11 +41,17 @@ const getResetCode = async (req, res) => {
     const code = await generate();
     const updatedUser = await usermodel.findOneAndUpdate(
       { email: user.email },
-      { $set: { otp: code, otpExpiry: Date.now() + 10 * 60 * 1000 } },
-      { new: true },
+      {
+        $set: {
+          otp: code,
+          passwordIsForogtten: true,
+          otpExpiry: Date.now() + 10 * 60 * 1000,
+        },
+      },
+      {returnDocument: "after"},
     );
 
-    const send = await changePassword(user.email, code, user.userName);
+    const send = await sendForgotPasswordEmail(user.email, code, user.userName);
     if (!send) {
       return res.status(400).json({ message: "Failed to send OTP email" });
     }
@@ -61,7 +67,7 @@ const getResetCode = async (req, res) => {
 };
 
 const confirmPasswordOTP = async (req, res) => {
-  const { email } = req.user;
+  const { email } = req.params;
   const { otp } = req.body;
   if (!email || !otp) {
     return res.status(400).json({ message: "Email and OTP are required" });
@@ -70,9 +76,7 @@ const confirmPasswordOTP = async (req, res) => {
   try {
     const user = await usermodel.findOne({ email });
     if (!user) {
-      return res
-        .status(404)
-        .json({ status: "not-found", message: "User not found" });
+      return res.status(404).json({ message: "User not found" });
     }
 
     if (user.otpExpiry < Date.now()) {
@@ -96,18 +100,19 @@ const confirmPasswordOTP = async (req, res) => {
 };
 
 const resetPassword = async (req, res) => {
+  const { email } = req.params;
+
   const { newPassword } = req.body;
-  if (!newPassword) {
-    return res.status(400).json({ message: "Password is required" });
+  if (!email || !newPassword) {
+    return res.status(400).json({ message: "Email and Password are required" });
   }
 
-  const { email } = req.user;
   try {
     const hashedPassword = await bcrypt.hash(newPassword, 12);
     const update = await usermodel.findOneAndUpdate(
       { email },
-      { $set: { password: hashedPassword } },
-      { new: true },
+      { $set: { password: hashedPassword, passwordIsForogtten: false } },
+      {returnDocument: "after"},
     );
     if (!update) {
       return res
@@ -152,7 +157,7 @@ const changeUserPassword = async (req, res) => {
     const update = await usermodel.findOneAndUpdate(
       { email },
       { $set: { password: hashedPassword } },
-      { new: true },
+      {returnDocument: "after"},
     );
 
     if (!update) {
@@ -181,12 +186,11 @@ const uploadPicture = async (req, res) => {
   }
 
   try {
-    const image = await uploadImage(picture);
     const update = await usermodel
       .findOneAndUpdate(
         { email: req.user.email },
-        { $set: { profileImage: image } },
-        { new: true },
+        { $set: { profileImage: image != "failed" ? image : "" } },
+        {returnDocument: "after"},
       )
       .select("-password");
     if (!update) {
@@ -208,7 +212,7 @@ const uploadPicture = async (req, res) => {
 };
 
 const updateDetails = async (req, res) => {
-  const { bio, number, userName } = req.body;
+  const { bio, number, userName, picture } = req.body;
   if (!number || !userName) {
     return res
       .status(401)
@@ -216,17 +220,23 @@ const updateDetails = async (req, res) => {
   }
 
   try {
+    let object = {
+      number,
+      userName,
+      bio: bio ? bio : "",
+    };
+    if (picture) {
+      const image = await uploadImage(picture);
+      object.profileImage = image;
+    }
+
     const update = await usermodel
       .findOneAndUpdate(
         { email: req?.user?.email },
         {
-          $set: {
-            number,
-            userName,
-            bio: bio ? bio : "",
-          },
+          $set: object,
         },
-        { new: true },
+        {returnDocument: "after"},
       )
       .select("-password");
     if (!update) {
@@ -268,13 +278,46 @@ const changeUserEmail = async (req, res) => {
       {
         $set: {
           changeEmail: email,
+          emailIsChanging: true,
           otp: code,
           otpExpiry: Date.now() + 10 * 60 * 1000,
         },
       },
-      { new: true },
+      {returnDocument: "after"},
     );
-    await changeEmail(update.email, code, update.userName);
+    await changeEmail(email, code, update.userName);
+    res.status(200).json({ message: "Enter The Code Sent To Your Mail" });
+  } catch (error) {
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const getMailChangedCode = async (req, res) => {
+  const { email } = req.params;
+  if (!email) {
+    return res.status(400).json({ message: "Email Is Required" });
+  }
+  try {
+    const find = await usermodel.findOne({
+      changeEmail: email,
+    });
+
+    if (!find) {
+      return res.status(400).json({ message: "Unathorized User" });
+    }
+    const code = await generate();
+    const update = await usermodel.findOneAndUpdate(
+      { changeEmail: email },
+      {
+        $set: {
+          emailIsChanging: true,
+          otp: code,
+          otpExpiry: Date.now() + 10 * 60 * 1000,
+        },
+      },
+      {returnDocument: "after"},
+    );
+    await changeEmail(email, code, update.userName);
     res.status(200).json({ message: "Enter The Code Sent To Your Mail" });
   } catch (error) {
     return res.status(500).json({ message: "Internal Server Error" });
@@ -282,15 +325,17 @@ const changeUserEmail = async (req, res) => {
 };
 const emailCode = async (req, res) => {
   const { email, otp } = req.body;
+  const { userEmail } = req.params;
+  if (!userEmail) {
+    return res.status(400).json({ message: "User Email Is Required" });
+  }
   if (!otp || !email) {
     return res.status(400).json({ message: "Fields Are Required" });
   }
   try {
-    const find = await usermodel.findOne({ email: req.user.email });
+    const find = await usermodel.findOne({ email: userEmail });
     if (!find) {
-      return res
-        .status(404)
-        .json({ status: "not-found", message: "User not found" });
+      return res.status(404).json({ message: "User not found" });
     }
     if (find.otpExpiry < Date.now()) {
       find.otp = null;
@@ -311,8 +356,16 @@ const emailCode = async (req, res) => {
     await find.save();
     await usermodel.findOneAndUpdate(
       { email: req.user.email },
-      [{ $set: { email: find.changeEmail, changeEmail: "" } }],
-      { new: true },
+      [
+        {
+          $set: {
+            email: find.changeEmail,
+            changeEmail: "",
+            emailIsChanging: false,
+          },
+        },
+      ],
+      {returnDocument: "after"},
     );
 
     return res
@@ -340,7 +393,7 @@ const updateLocation = async (req, res) => {
     const update = await usermodel.findByIdAndUpdate(
       req.user.id,
       { $set: { location } },
-      { new: true },
+      {returnDocument: "after"},
     );
 
     if (!update) {
@@ -366,7 +419,7 @@ const activeSwitch = async (req, res) => {
     const update = await usermodel.findByIdAndUpdate(
       req.user.id,
       { $set: { location, isActive: !req.user.isActive } },
-      { new: true },
+      {returnDocument: "after"},
     );
 
     if (!update) {
@@ -401,7 +454,7 @@ const getNearbyDrivers = async (req, res) => {
               type: "Point",
               coordinates: [lng, lat],
             },
-            $maxDistance: 5000, // 5 km radius
+            $maxDistance: 5000,
           },
         },
       })
@@ -412,6 +465,8 @@ const getNearbyDrivers = async (req, res) => {
       data: drivers,
     });
   } catch (error) {
+    console.log(error.message);
+
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -431,93 +486,19 @@ const getAllActiveDrivers = async (req, res) => {
   }
 };
 
-const updateNumber = async (req, res) => {
-  const { number } = req.body;
-  try {
-    const code = await generate();
-    const find = await usermodel.findOneAndUpdate(
-      { email: req.user.email },
-      {
-        $set: {
-          changeNumber: number,
-          otp: code,
-          otpExpiry: Date.now() + 10 * 60 * 1000,
-        },
-      },
-      { new: true },
-    );
-    const send = await sendNumberCode(
-      req.user.email,
-      find.number,
-      find.userName,
-      code,
-    );
-    if (!find || !send) {
-      return res.status(400).json({
-        message: "Failed Due To Unknown Error",
-        status: "retry",
-      });
-    }
-    return res
-      .status(200)
-      .json({ message: "Enter The Code Sent To Your Mail" });
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Internal Server Error", error: error.message });
-  }
-};
-
-const confirmUpdateNumber = async (req, res) => {
-  const { otp } = req.body;
-  if (!otp) {
-    return res.status(400).json({ message: "Code Is Required" });
-  }
-
-  try {
-    const user = await usermodel.findOne({ email: req.user.email });
-    if (!user) {
-      return res
-        .status(404)
-        .json({ status: "not-found", message: "User not found" });
-    }
-    if (user.otpExpiry < Date.now()) {
-      user.otp = null;
-      user.otpExpiry = null;
-      await user.save();
-
-      return res.status(400).json({ message: "OTP has expired" });
-    }
-    if (String(user.otp).trim() !== String(otp).trim()) {
-      return res.status(400).json({ message: "Invalid OTP" });
-    }
-
-    if (!user.changeNumber) {
-      return res
-        .status(400)
-        .json({ message: "No pending number change found", status: "no pend" });
-    }
-    user.number = user.changeNumber;
-    user.changeNumber = null;
-    user.otp = null;
-    user.otpExpiry = null;
-    await user.save();
-
-    return res.status(200).json({ message: "Number updated successfully" });
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Internal Server Error", error: error.message });
-  }
-};
-
 const updateTimeOuts = async (req, res) => {
   const { assign, accept } = req.body;
+  console.log(assign);
+  console.log(accept);
+
   if (!assign || !accept) {
     return res.status(400).json({ message: "Fields are empty" });
   }
   try {
-    const find = await usermodel.findById(req.user.id);
+    const find = await usermodel.findByIdAndUpdate(req.user.id, {
+      assignTimeOut: +assign,
+      acceptTimeOut: +accept,
+    });
     if (!find) {
       return res.status(400).json({ message: "Unathorized User" });
     }
@@ -542,7 +523,6 @@ module.exports = {
   activeSwitch,
   getNearbyDrivers,
   getAllActiveDrivers,
-  updateNumber,
-  confirmUpdateNumber,
   updateTimeOuts,
+  getMailChangedCode,
 };

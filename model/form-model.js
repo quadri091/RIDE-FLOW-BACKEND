@@ -15,11 +15,11 @@ const userSchema = new mongoose.Schema({
       return !this.googleSub;
     },
     unique: true,
+    sparse: true,
   },
   googleSub: {
     type: String,
     required: false,
-    default: null,
     sparse: true,
     unique: true,
   },
@@ -79,7 +79,14 @@ const userSchema = new mongoose.Schema({
       return undefined;
     },
   },
-
+  emailIsChanging: {
+    type: Boolean,
+    default: false,
+  },
+  passwordIsForogtten: {
+    type: Boolean,
+    default: false,
+  },
   changeEmail: {
     type: String,
     required: false,
@@ -111,9 +118,17 @@ const userSchema = new mongoose.Schema({
   },
   isActive: {
     type: Boolean,
+    default: false,
     required: function () {
       return this.role === "driver";
     },
+  },
+  isBusy: {
+    type: Boolean,
+    required: function () {
+      return this.role === "driver";
+    },
+    default: false,
   },
   plateNumber: {
     type: String,
@@ -152,5 +167,6 @@ const userSchema = new mongoose.Schema({
     },
   },
 });
+userSchema.index({ location: "2dsphere" });
 const usermodel = mongoose.model("user", userSchema);
 module.exports = usermodel;

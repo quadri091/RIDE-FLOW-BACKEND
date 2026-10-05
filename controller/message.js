@@ -1,13 +1,35 @@
+const usermodel = require("../model/form-model.js");
 const messageModel = require("../model/message.js");
 const { getSocketsByUserId } = require("../socket.js");
-
 // ─── SEND A MESSAGE ─────────────────────────────────────────────────────────
 // called when rider or driver sends a message
+const fetchReciverDetails = async (req, res, next) => {
+  try {
+    const { receiverId } = req.body;
+    const driverDetails = await usermodel.findById(receiverId);
+    if (!driverDetails) {
+      return res
+        .status(400)
+        .json({ message: "Receiver is not a member on this platform" });
+    }
+    req.driver = driverDetails;
+    next();
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
 const sendMessage = async (req, res) => {
-  const { receiverId, receiverName, receiverRole, content } = req.body;
+  const {
+    _id: receiverId,
+    userName: receiverName,
+    role: receiverRole,
+    profileImage: receiverPicture,
+  } = req.driver;
+  const { content } = req.body;
 
-  if (!receiverId || !receiverName || !receiverRole || !content) {
-    return res.status(400).json({ message: "All fields are required" });
+  if (!content) {
+    return res.status(400).json({ message: "Message is required" });
   }
 
   try {
@@ -16,11 +38,13 @@ const sendMessage = async (req, res) => {
         id: req.user.id,
         name: req.user.userName,
         role: req.user.role,
+        profileImage: req.user.profileImage,
       },
       receiver: {
         id: receiverId,
         name: receiverName,
         role: receiverRole,
+        profileImage: receiverPicture,
       },
       content,
     });
@@ -29,26 +53,35 @@ const sendMessage = async (req, res) => {
     const io = req.app.get("io");
     const targetSockets = getSocketsByUserId(receiverId);
     const senderSockets = getSocketsByUserId(req.user.id);
+    const issender = message.sender.id.toString() === req.user.id.toString();
     targetSockets.forEach((socketId) => {
       io.to(socketId).emit("newMessage", {
-        message,
+        person: message.sender,
+        message: message.content,
+        lastMessageAt: message.createdAt,
+        lastMessageFromMe: issender,
       });
 
       io.to(socketId).emit("newInbox", {
         person: message.sender,
         lastMessage: message.content,
         lastMessageAt: message.createdAt,
+        lastMessageFromMe: false,
       });
     });
 
     senderSockets.forEach((socketId) => {
       io.to(socketId).emit("newMessage", {
-        message,
+        person: message.receiver,
+        message: message.content,
+        lastMessageAt: message.createdAt,
+        lastMessageFromMe: issender,
       });
       io.to(socketId).emit("newInbox", {
         person: message.receiver,
         lastMessage: message.content,
         lastMessageAt: message.createdAt,
+        lastMessageFromMe: true,
       });
     });
 
@@ -56,10 +89,7 @@ const sendMessage = async (req, res) => {
       message: "Message sent successfully",
       data: message,
     });
-  } catch (error) {
-    console.log(error);
-    return res.status(500).json({ message: "Server error" });
-  }
+  } catch (error) {}
 };
 
 // ─── GET CHAT BETWEEN TWO USERS ─────────────────────────────────────────────
@@ -69,6 +99,7 @@ const getChat = async (req, res) => {
   const { userId } = req.params;
 
   try {
+    let arr = [];
     const messages = await messageModel
       .find({
         $or: [
@@ -78,14 +109,49 @@ const getChat = async (req, res) => {
       })
       .sort({ createdAt: 1 }); // oldest first
 
+    messages.forEach((member) => {
+      const issender = member.sender.id.toString() === req.user.id.toString();
+      let object = {
+        person: member.sender,
+        message: member.content,
+        lastMessageAt: member.createdAt,
+        lastMessageFromMe: issender,
+      };
+      arr.push(object);
+    });
     return res.status(200).json({
       message: "Chat fetched successfully",
-      data: messages,
+      data: arr,
     });
   } catch (error) {
     console.log(error);
     return res.status(500).json({ message: "Server error" });
   }
+};
+const addNewInboxPerson = (req, res) => {
+  const { id, name, profileImage, role } = req.body;
+
+  const io = req.app.get("io");
+
+  const userSockets = getSocketsByUserId(req.user.id);
+
+  const data = {
+    person: {
+      id,
+      name,
+      profileImage,
+      role,
+    },
+    comingNew: true,
+  };
+
+  userSockets.forEach((socketId) => {
+    io.to(socketId).emit("addNewInboxPerson", data);
+  });
+
+  return res.status(200).json({
+    message: "Person added to inbox",
+  });
 };
 
 // ─── GET INBOX ───────────────────────────────────────────────────────────────
@@ -93,7 +159,6 @@ const getChat = async (req, res) => {
 // showing only the latest message from each conversation
 const getInbox = async (req, res) => {
   try {
-    // get all messages involving the logged in user
     const messages = await messageModel
       .find({
         $or: [{ "sender.id": req.user.id }, { "receiver.id": req.user.id }],
@@ -115,6 +180,7 @@ const getInbox = async (req, res) => {
           person: otherPerson,
           lastMessage: msg.content,
           lastMessageAt: msg.createdAt,
+          lastMessageFromMe: issender,
         };
       }
     });
@@ -135,5 +201,7 @@ const getInbox = async (req, res) => {
 module.exports = {
   sendMessage,
   getChat,
+  fetchReciverDetails,
   getInbox,
+  addNewInboxPerson,
 };

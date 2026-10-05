@@ -17,7 +17,6 @@ const staffSchema = new mongoose.Schema({
   },
   isApproved: { type: Boolean, default: false },
   bio: { type: String, default: "" },
-  verified: { type: Boolean, default: false },
   token: { type: String },
   otp: { type: Number },
   otpExpiry: { type: Date },

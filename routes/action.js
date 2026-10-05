@@ -7,12 +7,11 @@ const {
   confirmPasswordOTP,
   resetPassword,
   changeUserPassword,
+  getMailChangedCode,
   uploadPicture,
   activeSwitch,
   getNearbyDrivers,
   getAllActiveDrivers,
-  updateNumber,
-  confirmUpdateNumber,
   updateTimeOuts,
 } = require("../controller/action");
 const express = require("express");
@@ -20,32 +19,29 @@ const actionRouter = express.Router();
 const authMiddleWare = require("../middleware/auth.js");
 const roleMiddleware = require("../middleware/role.js");
 
-actionRouter.post("/get-reset-code", authMiddleWare, getResetCode);
-actionRouter.post("/verify-reset-password", authMiddleWare, confirmPasswordOTP);
-actionRouter.post("/apply-reset-password", authMiddleWare, resetPassword);
+actionRouter.post("/get-reset-code/:email", getResetCode);
+actionRouter.post("/verify-reset-password/:email", confirmPasswordOTP);
+actionRouter.post("/apply-reset-password/:email", resetPassword);
 actionRouter.post("/update-location", authMiddleWare, updateLocation);
 actionRouter.post("/change-user-password", authMiddleWare, changeUserPassword);
 actionRouter.post("/update-user-picture", authMiddleWare, uploadPicture);
 actionRouter.post("/update-user-details", authMiddleWare, updateDetails);
 actionRouter.post("/change-user-email", authMiddleWare, changeUserEmail);
-actionRouter.post("/verify-user-email", authMiddleWare, emailCode);
+actionRouter.post("/verify-user-email/:userEmail", emailCode);
+actionRouter.post("/get-mail-changed-code/:email", getMailChangedCode);
 actionRouter.post("/toggle-active", authMiddleWare, activeSwitch);
 actionRouter.post("/get-nearby-drivers", authMiddleWare, getNearbyDrivers);
 actionRouter.post(
   "/get-all-active-drivers",
   authMiddleWare,
+  roleMiddleware("admin", "superadmin"),
   getAllActiveDrivers,
 );
-actionRouter.post("/update-number", authMiddleWare, updateNumber);
+
 actionRouter.post(
-  "/confirm-update-number",
-  authMiddleWare,
-  confirmUpdateNumber,
-);
-(actionRouter.post(
   "/update-time-out",
   authMiddleWare,
-  roleMiddleware("driver"),
-),
-  updateTimeOuts);
+  roleMiddleware("rider"),
+  updateTimeOuts,
+);
 module.exports = actionRouter;

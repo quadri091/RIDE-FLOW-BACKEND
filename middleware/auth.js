@@ -6,6 +6,7 @@ const authMiddleWare = async (req, res, next) => {
   try {
     let find;
     const authHeader = req.headers.authorization;
+
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ message: "Token is required" });
     }

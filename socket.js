@@ -1,6 +1,6 @@
 const jwt = require("jsonwebtoken");
 const usermodel = require("./model/form-model.js");
-
+const tripModel = require("./model/trip-model.js");
 const userSocket = [];
 
 const lifeUpdate = (io) => {
@@ -53,31 +53,48 @@ const lifeUpdate = (io) => {
 
     // trip room
     socket.on("joinTrip", (matchCode) => {
+      console.log(`User with id ${userId} joined`);
+
       socket.join(matchCode);
     });
 
-    socket.on("driverLocation", ({ matchCode, lat, lng }) => {
-      io.to(matchCode).emit("locationUpdate", { lat, lng });
+    socket.on("driverLocation", async ({ lat, lng }) => {
+      const trips = await tripModel.find({
+        "driver.id": req.user.id,
+      });
+
+      // This updates ALL trips matching the driver's ID
+      await tripModel.updateMany(
+        { "driver.id": req.user.id },
+        { $set: { driverLocation: [lat, lng] } },
+      );
+
+      for (const trip of trips) {
+        const socket = getSocketsByUserId(trip.rider.id);
+        io.to(socket).emit("locationUpdate", {
+          matchCode: trip.matchCode,
+          lat,
+          lng,
+        });
+      }
     });
 
-    //. create call part
+    // create call part
 
     socket.on("call", ({ targetUserId, offer }) => {
       const targetSockets = getSocketsByUserId(targetUserId);
-
       if (targetSockets.length === 0) {
-        // target is offline
         socket.emit("callFailed", { message: "User is not available" });
         return;
       }
 
       const caller = userSocket.find((u) => u.socketId === socket.id);
-      const callerName = caller ? caller.name : "Unknown";
 
       targetSockets.forEach((socketId) => {
         io.to(socketId).emit("incomingCall", {
           callerId: userId,
-          callerName,
+          callerName: caller?.name || "Unknown",
+          callerRole: caller?.role || "",
           offer,
         });
       });

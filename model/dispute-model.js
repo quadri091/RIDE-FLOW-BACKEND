@@ -20,7 +20,6 @@ const disputeSchema = new mongoose.Schema({
   raisedBy: {
     id: { type: mongoose.Schema.Types.ObjectId, required: true },
     name: { type: String, required: true },
-    number: { type: String, required: true },
     role: { type: String, enum: ["rider", "driver"], required: true },
   },
 
@@ -28,7 +27,6 @@ const disputeSchema = new mongoose.Schema({
   against: {
     id: { type: mongoose.Schema.Types.ObjectId, required: true },
     name: { type: String, required: true },
-    number: { type: String, required: true },
     role: { type: String, enum: ["rider", "driver"], required: true },
   },
   evidence: [
@@ -62,6 +60,15 @@ const disputeSchema = new mongoose.Schema({
   reason: {
     type: String,
     required: true,
+    enum: [
+      "Fair payment",
+      "Incorrect Route Taken",
+      "Vehicle Mismatch",
+      "Rider No-Show",
+      "Driver No-Show",
+      "Vehicle Damage or Mess",
+      "Safety or Behavior Concern",
+    ],
   },
 
   description: {

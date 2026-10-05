@@ -6,6 +6,7 @@ const { Server } = require("socket.io");
 const cors = require("cors");
 const connect = require("./database/database.js");
 const formRouter = require("./routes/form.js");
+const savedRouter = require("./routes/saved.js");
 const messageRouter = require("./routes/message.js");
 const tripRouter = require("./routes/trip.js");
 const disputeRouter = require("./routes/dispute.js");
@@ -38,6 +39,7 @@ app.use(
 app.set("io", io);
 app.use("/form", formRouter);
 app.use("/dispute", disputeRouter);
+app.use("/location", savedRouter);
 app.use("/total-trip", totalTripRouter);
 app.use("/staff", staffRouter);
 app.use("/message", messageRouter);

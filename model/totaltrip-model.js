@@ -4,12 +4,10 @@ const tripSchema = new mongoose.Schema({
   rider: {
     id: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true },
     name: { type: String, required: true },
-    number: { type: String, required: true },
   },
   driver: {
     id: { type: mongoose.Schema.Types.ObjectId, ref: "user", default: null },
     name: { type: String, default: "" },
-    number: { type: String, default: "" },
   },
   matchCode: {
     type: String,
@@ -49,21 +47,25 @@ const tripSchema = new mongoose.Schema({
   assigned: {
     id: { type: mongoose.Schema.Types.ObjectId, ref: "user" },
     name: { type: String },
-    number: { type: String },
     appliedAt: { type: Date },
   },
   applicants: [
     {
       id: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true },
       name: { type: String, required: true },
-      number: { type: String, required: true },
       appliedAt: { type: Date, default: Date.now },
     },
   ],
   declinedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "user" }],
   status: {
     type: String,
-    enum: ["available", "accepted", "trip started", "trip completed"],
+    enum: [
+      "available",
+      "accepted",
+      "trip started",
+      "trip completed",
+      "cancelled",
+    ],
     default: "available",
   },
   createdAt: {

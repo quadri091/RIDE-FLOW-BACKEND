@@ -1,5 +1,5 @@
 const nodemailer = require("nodemailer");
-
+require("dotenv").config();
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -322,90 +322,14 @@ const changeEmail = async (email, code, username) => {
   }
 };
 
-const changePassword = async (email, code, username) => {
-  const messageTemplate = buildTemplate({
-    eyebrow: "Account Details",
-    heading: "Confirm Password Change",
-    intro:
-      "We received a request to change the password on your account. Enter the code below to confirm this change.",
-    detailsLabel: "Account Details",
-    username,
-    detailLine: email,
-    code,
-    noteTitle: "⚠️ Didn't request this?",
-    noteItems: [
-      "Never share this code with anyone",
-      "RideFlow staff will never ask for this code",
-      "If you didn't request a password change, secure your account and contact support immediately",
-    ],
-    noteTone: "danger",
-  });
-
-  const mailOptions = {
-    from: process.env.email,
-    to: email,
-    subject: "Your OTP Code",
-    html: messageTemplate,
-  };
-
-  try {
-    const sentEmail = await transporter.sendMail(mailOptions);
-    if (sentEmail) {
-      return { text: "Mail sent", status: "success" };
-    }
-  } catch (error) {
-    console.log(error);
-    return { text: "Failed to send mail", status: "fail" };
-  }
-};
-
 /**
- * sendNumberCode
  * Notifies the account holder that someone is attempting to change
  * their phone number, and gives them the confirmation code.
  */
-const sendNumberCode = async (email, number, username, code) => {
-  const messageTemplate = buildTemplate({
-    eyebrow: "Account Details",
-    heading: "Confirm Phone Number Change",
-    intro:
-      "Someone is trying to change the phone number linked to your account. Enter the code below to confirm this change.",
-    detailsLabel: "Account Details",
-    username,
-    detailLine: `New number: ${number}`,
-    code,
-    noteTitle: "⚠️ Didn't request this?",
-    noteItems: [
-      "Never share this code with anyone",
-      "RideFlow staff will never ask for this code",
-      "If you didn't request a phone number change, secure your account and contact support immediately",
-    ],
-    noteTone: "danger",
-  });
-
-  const mailOptions = {
-    from: process.env.email,
-    to: email,
-    subject: "Your OTP Code",
-    html: messageTemplate,
-  };
-
-  try {
-    const sentEmail = await transporter.sendMail(mailOptions);
-    if (sentEmail) {
-      return { text: "Mail sent", status: "success" };
-    }
-  } catch (error) {
-    console.log(error);
-    return { text: "Failed to send mail", status: "fail" };
-  }
-};
 
 module.exports = {
   sendEmail,
-  changePassword,
   changeEmail,
   sendAdminEmail,
   sendForgotPasswordEmail,
-  sendNumberCode,
 };

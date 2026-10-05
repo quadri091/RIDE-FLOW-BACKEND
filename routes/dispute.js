@@ -3,18 +3,20 @@ const disputeRouter = express.Router();
 const authMiddleWare = require("../middleware/auth.js");
 const roleMiddleware = require("../middleware/role.js");
 const {
-  createDispute,
+  processAll,
   getAllDisputes,
   getDisputeByCode,
   updateDisputeStatus,
   escalateDispute,
+  getMyDispute,
   resolveDispute,
   deleteDispute,
   addEvidence,
 } = require("../controller/dispute.js");
 
 // rider or driver
-disputeRouter.post("/create-dispute", authMiddleWare, createDispute);
+disputeRouter.post("/create-dispute", authMiddleWare, processAll);
+disputeRouter.get("/get-my-dispute", authMiddleWare, getMyDispute);
 
 // any admin
 disputeRouter.get(

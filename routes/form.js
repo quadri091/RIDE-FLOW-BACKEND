@@ -5,17 +5,17 @@ const {
   login,
   driverSignup,
   verifyOTP,
-  verifyToken,
   uploadCarImage,
+  verifyToken,
   verifyGoogleToken,
   getCode,
 } = require("../controller/form.js");
 
 formRouter.post("/signup", signup);
-formRouter.get("/send-verify-email", getCode);
+formRouter.post("/send-verify-email", getCode);
 formRouter.post("/verify-otp", verifyOTP);
-formRouter.post("/verify-token", verifyToken);
 formRouter.post("/login", login);
+formRouter.post("/verify-token", verifyToken);
 formRouter.post("/upload", uploadCarImage);
 formRouter.post("/driver-signup", driverSignup);
 formRouter.post("/auth/google", verifyGoogleToken);

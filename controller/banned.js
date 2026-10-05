@@ -47,7 +47,7 @@ const banUser = async (req, res) => {
     await usermodel.findByIdAndUpdate(
       userId,
       { $set: { banned: true } },
-      { new: true },
+      { returnDocument: "after" },
     );
 
     // clear any existing suspension since ban supersedes it
@@ -88,7 +88,7 @@ const unbanUser = async (req, res) => {
     await usermodel.findByIdAndUpdate(
       userId,
       { $set: { banned: false } },
-      { new: true },
+      { returnDocument: "after" },
     );
     const io = req.app.get("io");
     await broadCastBanned("ban:deleted", io, ban);

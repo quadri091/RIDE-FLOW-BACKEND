@@ -12,10 +12,7 @@ const client = new OAuth2Client(
   "postmessage",
 );
 const CLIENT_ID = process.env.googleClientId;
-const {
-  sendEmail,
-  sendForgotPasswordEmail,
-} = require("../utils/send-to-email.js");
+const { sendEmail } = require("../utils/send-to-email.js");
 const generateOTP = require("otp-generator");
 
 const generate = async () => {
@@ -40,9 +37,27 @@ const login = async (req, res) => {
     }
 
     if (!user.verified) {
-      return res
-        .status(400)
-        .json({ message: "Please verify your email first", status: "code" });
+      return res.status(400).json({
+        message: "Please verify your email first",
+        status: "not-verified",
+      });
+    }
+
+    if (user.emailIsChanging) {
+      return res.status(400).json({
+        data: user.changeEmail,
+        mailer: user.email,
+        message: `Confirm the email ${user.changeEmail} which you changed`,
+        status: "email-changed",
+      });
+    }
+
+    if (user.passwordIsForogtten) {
+      return res.status(400).json({
+        data: user.email,
+        message: `Confirm the otp code for changing your password`,
+        status: "password-otp",
+      });
     }
 
     if (!user.password) {
@@ -71,14 +86,14 @@ const login = async (req, res) => {
       { email: user.email, id: user.id },
       process.env.jwtSecretKey,
       {
-        expiresIn: 60 * 60,
+        expiresIn: 60 * 60 * 2,
       },
     );
 
     const verified = await usermodel.findOneAndUpdate(
       { email: user.email },
       { $set: { token } },
-      { new: true },
+      {returnDocument: "after"},
     );
 
     if (!verified) {
@@ -87,6 +102,7 @@ const login = async (req, res) => {
 
     return res.status(200).json({
       message: "Login Successful",
+      status: true,
       data: { role: user.role, token },
     });
   } catch (error) {
@@ -126,6 +142,7 @@ const signup = async (req, res) => {
       userName,
       number,
       otp: code,
+      role: "rider",
       otpExpiry: Date.now() + 10 * 60 * 1000,
     });
 
@@ -143,14 +160,49 @@ const signup = async (req, res) => {
       status: true,
     });
   } catch (error) {
+    console.log(error);
+    if (error.code === 11000) {
+      // Look inside the keyPattern object to find the field name
+      const duplicatedField = Object.keys(error.keyPattern)[0];
+
+      if (duplicatedField === "email") {
+        return res
+          .status(400)
+          .json({ message: "This email address is already registered." });
+      }
+
+      if (duplicatedField === "number") {
+        return res
+          .status(400)
+          .json({ message: "This phone number is already registered." });
+      }
+    }
     return res
       .status(500)
       .json({ message: "Server error", error: error.message });
   }
 };
 
+const verifyToken = async (req, res) => {
+  try {
+    const token = req.headers.authorization.split(" ")[1];
+    if (!token) return res.status(400).json({ message: "Token is required" });
+    const jwtVerify = await jwt.verify(token, process.env.jwtSecretKey);
+    if (!jwtVerify) return res.status(400).json({ message: "Invalid Token" });
+
+    const find = await usermodel
+      .findOne({ email: jwtVerify.email })
+      .select("-password");
+    res.status(200).json({ message: "Token is valid", data: find });
+  } catch (error) {
+    console.log(error);
+
+    return res.status(400).json({ message: "Token verification failed" });
+  }
+};
+
 const getCode = async (req, res) => {
-  const { email, forgot } = req.body;
+  const { email } = req.body;
   if (!email) {
     return res.status(400).json({ message: "Email is required" });
   }
@@ -169,44 +221,23 @@ const getCode = async (req, res) => {
     const updatedUser = await usermodel.findOneAndUpdate(
       { email: user.email },
       { $set: { otp: code, otpExpiry: Date.now() + 10 * 60 * 1000 } },
-      { new: true },
+      {returnDocument: "after"},
     );
 
-    const send = forgot
-      ? await sendForgotPasswordEmail(user.email, code, user.userName)
-      : await sendEmail(user.email, code, user.userName);
-    if (!send) {
+    const send = await sendEmail(user.email, code, user.userName);
+    if (!send.success) {
+      console.log(send.text); // "Failed to send mail" — now you'll actually see this
       return res.status(400).json({ message: "Failed to send OTP email" });
     }
+    console.log(send);
 
     return res.status(200).json({
-      message: "OTP sent to your email for password reset",
-      data: updatedUser.email,
+      status: true,
+      message: "OTP sent to your email",
     });
   } catch (error) {
     console.log(error);
     return res.status(500).json({ message: "Server error" });
-  }
-};
-
-const verifyToken = async (req, res) => {
-  try {
-    const token = req.headers.authorization.split(" ")[1];
-    if (!token) return res.status(400).json({ message: "Token is required" });
-    const jwtVerify = await jwt.verify(token, process.env.jwtSecretKey);
-    if (!jwtVerify)
-      return res
-        .status(400)
-        .json({ status: "invalid", message: "Invalid Token" });
-
-    const find = await usermodel
-      .findOne({ email: jwtVerify.email })
-      .select("-password");
-    res.status(200).json({ message: "Token is valid", data: find });
-  } catch (error) {
-    console.log(error);
-
-    return res.status(400).json({ message: "Token verification failed" });
   }
 };
 
@@ -218,9 +249,7 @@ const verifyOTP = async (req, res) => {
   try {
     const user = await usermodel.findOne({ email });
     if (!user) {
-      return res
-        .status(404)
-        .json({ status: "not-found", message: "User not found" });
+      return res.status(404).json({ message: "User not found" });
     }
 
     if (user.otpExpiry < Date.now()) {
@@ -242,14 +271,16 @@ const verifyOTP = async (req, res) => {
     const io = req.app.get("io");
     io.to("admins").emit("new:updated", user);
 
-    return res.status(200).json({ message: "Email verified successfully" });
+    return res
+      .status(200)
+      .json({ message: "OTP Verified Successfully", status: true });
   } catch (error) {
     console.log(error);
-    return res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server Error" });
   }
 };
 const driverSignup = async (req, res) => {
-  console.log(req.body);
+  let imageArray = [];
   const {
     userName,
     email,
@@ -298,6 +329,11 @@ const driverSignup = async (req, res) => {
         .json({ message: "Driver must be at least 18 years old" });
     }
     const hashedPassword = await bcrypt.hash(password, 12);
+    const code = await generate();
+    for (const element of carImage) {
+      const req1 = await cloudinary.uploader.upload(element);
+      imageArray.push(req1.secure_url);
+    }
 
     const user = await usermodel.create({
       email,
@@ -311,22 +347,18 @@ const driverSignup = async (req, res) => {
       role: "driver",
       carYear,
       carModel,
-      carImage,
+      carImage: imageArray,
+      otp: code,
+      otpExpiry: Date.now() + 10 * 60 * 1000,
     });
 
-    const code = await generate();
-    const updatedUser = await usermodel.findOneAndUpdate(
-      { email: user.email },
-      { $set: { otp: code, otpExpiry: Date.now() + 10 * 60 * 1000 } },
-      { new: true },
-    );
-
     const send = await sendEmail(user.email, code, user.userName);
-    if (!send) {
+    if (!send.success) {
+      console.log(send.text); // "Failed to send mail" — now you'll actually see this
       return res.status(400).json({ message: "Failed to send OTP email" });
     }
     const io = req.app.get("io");
-    io.to("admins").emit("new:signup", updatedUser);
+    io.to("admins").emit("new:signup", user);
 
     return res.status(200).json({
       message: "OTP sent to your email for verification",
@@ -335,11 +367,28 @@ const driverSignup = async (req, res) => {
     });
   } catch (error) {
     console.log(error);
+    if (error.code === 11000) {
+      // Look inside the keyPattern object to find the field name
+      const duplicatedField = Object.keys(error.keyPattern)[0];
+
+      if (duplicatedField === "email") {
+        return res
+          .status(400)
+          .json({ message: "This email address is already registered." });
+      }
+
+      if (duplicatedField === "number") {
+        return res
+          .status(400)
+          .json({ message: "This phone number is already registered." });
+      }
+    }
     return res.status(500).json({ message: "Server error" });
   }
 };
 
 const uploadCarImage = async (req, res) => {
+  console.log("HIT uploadCarImage", req.body);
   const { plate, license } = req.body;
   if (!plate || !license) {
     return res
@@ -357,7 +406,7 @@ const uploadCarImage = async (req, res) => {
       },
     });
   } catch (error) {
-    console.log(error);
+    console.log(error, "Error");
     return res
       .status(500)
       .json({ message: "Server error", error: error.message });
@@ -378,69 +427,83 @@ const verifyGoogleToken = async (req, res) => {
 
     let user = await usermodel.findOne({ email });
 
-    // If user doesn't exist, create them
-    // 1. Check if user exists with manual account
+    // Existing manual account trying to use Google sign-in
     if (user && user.googleSub == null) {
       return res.status(400).json({ message: "Sign in manually" });
     }
 
+    // Single source of truth for ban/suspension — works even if no
+    // usermodel document exists yet (e.g. pre-banned email)
     const bannedUser = await bannedModel.findOne({ "user.email": email });
     if (bannedUser) {
-      return res.status(400).json({ message: "User is banned already" });
+      return res.status(403).json({ message: "User has been banned" });
     }
+
     const suspendedUser = await suspendedModel.findOne({ "user.email": email });
     if (suspendedUser) {
-      return res.status(400).json({ message: "User is suspended already" });
-    }
-
-    // 2. Create if doesn't exist
-    if (!user) {
-      try {
-        user = await usermodel.create({
-          email,
-          userName: name,
-          profileImage,
-          googleSub: userId,
-          verified: true,
-        });
-        const io = req.app.get("io");
-        io.to("admins").emit("new:signup", user);
-      } catch (error) {
-        return res.status(400).json({ message: "Failed to create user" });
-      }
-    }
-
-    if (user.suspended) {
-      const find = await suspendedModel.findOne({ "user.id": user.id });
-      const time = formatTimestamp(find.suspendedUntil);
+      const time = formatTimestamp(suspendedUser.suspendedUntil);
       return res.status(403).json({
         message: `User has been suspended till ${time}`,
       });
     }
 
-    if (user.banned) {
-      return res.status(403).json({ message: `User has been banned` });
+    const io = req.app.get("io");
+    let isNewUser = false;
+
+    if (!user) {
+      isNewUser = true;
+
+      // Explicit, minimal payload — number is intentionally NOT included
+      // so Mongoose leaves it fully unset (required for the sparse
+      // unique index on `number` to correctly skip this document).
+      const newUserData = {
+        email,
+        userName: name,
+        profileImage,
+        googleSub: userId,
+        verified: true,
+      };
+
+      try {
+        user = await usermodel.create(newUserData);
+      } catch (error) {
+        console.log(error);
+
+        // Duplicate key errors (email, number, googleSub, etc.)
+        if (error.code === 11000) {
+          const field = Object.keys(error.keyPattern || {})[0] || "field";
+          return res.status(409).json({
+            message: `An account with this ${field} already exists`,
+            field,
+          });
+        }
+
+        return res
+          .status(400)
+          .json({ message: "Failed to create user", error: error.message });
+      }
     }
 
-    // 3. At this point user exists (either found or just created)
-    const token = jwt.sign({ email, id: user.id }, process.env.jwtSecretKey, {
-      expiresIn: 60 * 60,
+    // Token generated once, after we're guaranteed a real, persisted user
+    const token = jwt.sign({ email, id: user._id }, process.env.jwtSecretKey, {
+      expiresIn: 60 * 60 * 2,
     });
+    user.token = token;
+    await user.save();
 
-    const updatedUser = await usermodel.findOneAndUpdate(
-      { email },
-      { $set: { token } },
-      { new: true },
-    );
-    const io = req.app.get("io");
-    io.to("admins").emit("new:signup", updatedUser);
+    if (isNewUser) {
+      io.to("admins").emit("new:signup", user);
+    }
+
     return res.status(200).json({
       message: "Login Successful",
       data: { role: user.role, token },
     });
   } catch (error) {
     console.log(error);
-    return res.status(401).json({ message: "Invalid Google Token" });
+    return res
+      .status(401)
+      .json({ message: "Invalid Google Token", error: error.message });
   }
 };
 
@@ -449,8 +512,8 @@ module.exports = {
   login,
   driverSignup,
   getCode,
+  verifyToken,
   verifyOTP,
   uploadCarImage,
-  verifyToken,
   verifyGoogleToken,
 };

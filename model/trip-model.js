@@ -4,28 +4,26 @@ const tripSchema = new mongoose.Schema({
   rider: {
     id: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true },
     name: { type: String, required: true },
-    number: { type: String, required: true },
   },
   driver: {
     id: { type: mongoose.Schema.Types.ObjectId, ref: "user", default: null },
     name: { type: String, default: "" },
-    number: { type: String, default: "" },
   },
   matchCode: {
     type: String,
     required: true,
     unique: true,
   },
-  startLocation: {
-    coordinates: {
-      type: [Number], // [longitude, latitude]
-      required: true,
-    },
-    address: { type: String, default: "" },
-  },
   price: {
     type: String,
     required: true,
+  },
+  startLocation: {
+    coordinates: {
+      type: [Number],
+      required: true,
+    },
+    address: { type: String, default: "" },
   },
   endLocation: {
     coordinates: {
@@ -49,22 +47,30 @@ const tripSchema = new mongoose.Schema({
   assigned: {
     id: { type: mongoose.Schema.Types.ObjectId, ref: "user" },
     name: { type: String },
-    number: { type: String },
     appliedAt: { type: Date },
   },
   applicants: [
     {
       id: { type: mongoose.Schema.Types.ObjectId, ref: "user", required: true },
       name: { type: String, required: true },
-      number: { type: String, required: true },
       appliedAt: { type: Date, default: Date.now },
     },
   ],
   declinedBy: [{ type: mongoose.Schema.Types.ObjectId, ref: "user" }],
   status: {
     type: String,
-    enum: ["available", "accepted", "trip started", "trip completed"],
+    enum: [
+      "available",
+      "accepted",
+      "trip started",
+      "trip completed",
+      "cancelled",
+    ],
     default: "available",
+  },
+  driverLocation: {
+    type: [Number],
+    default: [],
   },
   createdAt: {
     type: Date,
