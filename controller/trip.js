@@ -4,7 +4,7 @@ const totaltripModel = require("../model/totaltrip-model.js");
 const axios = require("axios");
 const mongoose = require("mongoose");
 const usermodel = require("../model/form-model.js");
-const { getSocketsByUserId } = require("../socket.js");
+const { emitToUser } = require("../socket.js");
 const generateMatchCode = async () => {
   const lastTrip = await totaltripModel
     .findOne()
@@ -31,11 +31,15 @@ const createTrip = async (req, res) => {
   }
 
   try {
+    console.log(true);
     let matchCode = await generateMatchCode();
-    let codeExists = await tripModel.findOne({ matchCode });
-    while (codeExists) {
-      matchCode = await generateMatchCode();
-      codeExists = await tripModel.findOne({ matchCode });
+    // bump the number until it's free in both collections
+    // (regenerating from totaltrips would return the same code forever)
+    while (
+      (await tripModel.exists({ matchCode })) ||
+      (await totaltripModel.exists({ matchCode }))
+    ) {
+      matchCode = `T-${parseInt(matchCode.split("-")[1]) + 1}`;
     }
 
     const tripData = {
@@ -70,10 +74,10 @@ const createTrip = async (req, res) => {
     if (!trip) {
       return res.status(400).json({ message: "Error creating account" });
     }
-
+    const io = req.app.get("io");
     if (!usedArea) {
       const savedObject = {
-        email: req.user.email,
+        userId: req.user.id,
         startLocation: {
           coordinates: route.startCoordinates,
           address: route.startAddress || "",
@@ -87,13 +91,12 @@ const createTrip = async (req, res) => {
         duration: route.duration,
       };
       await savedModel.create(savedObject);
+      emitToUser(io, req.user.id, "saved:created", savedObject);
     }
 
-    const io = req.app.get("io");
-    const socket = getSocketsByUserId(req.user.id.toString());
-    io.to(socket).emit("trip:created", trip);
+    emitToUser(io, req.user.id, "trip:created", trip);
     io.to("drivers").emit("trip:created", trip);
-    io.to("drivers").emit("saved:created", savedObject);
+
     io.to("admins").emit("trip:created", trip);
 
     return res.status(200).json({
@@ -243,11 +246,7 @@ const assignTrip = async (req, res) => {
     );
 
     const io = req.app.get("io");
-    await broadCastTrip(io, "admins", "trip:assigned", updatedTrip);
-    const socket1 = getSocketsByUserId(trip.rider.id.toString());
-    const socket2 = getSocketsByUserId(driver.id.toString());
-    io.to(socket2).emit("trip:assigned", updatedTrip);
-    io.to(socket1).emit("trip:assigned", updatedTrip);
+
     const find = await usermodel.findById(trip?.rider?.id);
 
     if (find) {
@@ -258,6 +257,10 @@ const assignTrip = async (req, res) => {
         +find.assignTimeOut * 60 * 1000,
       );
     }
+
+    await broadCastTrip(io, "admins", "trip:assigned", updatedTrip);
+    emitToUser(io, driver.id, "trip:assigned", updatedTrip);
+    emitToUser(io, trip.rider.id, "trip:assigned", updatedTrip);
 
     return res.status(200).json({
       message: `Assigned driver will be auto removed after ${req.user.assignTimeOut} minutes`,
@@ -324,10 +327,8 @@ const applyTrip = async (req, res) => {
 
     const io = req.app.get("io");
     await broadCastTrip(io, "admins", "trip:updated", updatedTrip);
-    const socket1 = getSocketsByUserId(req.user.id.toString());
-    const socket2 = getSocketsByUserId(trip.rider.id.toString());
-    io.to(socket1).emit("trip:updated", updatedTrip);
-    io.to(socket2).emit("trip:updated", updatedTrip);
+    emitToUser(io, req.user.id, "trip:updated", updatedTrip);
+    emitToUser(io, trip.rider.id, "trip:updated", updatedTrip);
 
     return res.status(200).json({
       message: "Applied for trip successfully",
@@ -388,16 +389,17 @@ const acceptTrip = async (req, res) => {
 
     const io = req.app.get("io");
     await broadCastTrip(io, "admins", "trip:accepted", updatedTrip);
-    const socket1 = getSocketsByUserId(trip.rider.id.toString());
-    const socket2 = getSocketsByUserId(req.user.id.toString());
-    io.to(socket1).emit("trip:accepted", updatedTrip);
-    io.to(socket2).emit("trip:accepted", updatedTrip);
+    emitToUser(io, trip.rider.id, "trip:accepted", updatedTrip);
+    emitToUser(io, req.user.id, "trip:accepted", updatedTrip);
 
     const find = await usermodel.findById(trip?.rider?.id);
     if (find) {
-      setTimeout(async () => {
-        await autoDeleteAccept(req, matchCode, req.user.id.toString());
-      }, 5000);
+      setTimeout(
+        async () => {
+          await autoDeleteAccept(req, matchCode, req.user.id.toString());
+        },
+        +find.acceptTimeOut * 60 * 1000,
+      );
     }
     return res.status(200).json({
       message: "Trip accepted successfully",
@@ -454,13 +456,15 @@ const autoDeleteAssign = async (req, matchCode, driverId) => {
         "trip:auto-remove-assign",
         `Driver: <b>${find.assigned.name} has been remove from Trip: ${updatedTrip.matchCode}</b>`,
       );
-      const socket1 = getSocketsByUserId(find.rider.id.toString());
-      const socket2 = getSocketsByUserId(driverId.toString());
-      io.to(socket2).emit(
+      emitToUser(
+        io,
+        driverId,
         "trip:auto-remove-assign",
         `You have been remove from Trip: ${find.matchCode}</b>`,
       );
-      io.to(socket1).emit(
+      emitToUser(
+        io,
+        find.rider.id,
         "trip:auto-remove-assign",
         `Driver: <b>${find.assigned.name} has been remove from Trip: ${find.matchCode}</b>`,
       );
@@ -478,8 +482,9 @@ const autoDeleteAssign = async (req, matchCode, driverId) => {
         `Driver: ${driverId} is not assigned to this trip`,
       );
 
-      const socket1 = getSocketsByUserId(find.rider.id.toString());
-      io.to(socket1).emit(
+      emitToUser(
+        io,
+        find.rider.id,
         "trip:failed-to-auto-delete",
         `Driver: ${driverId} is not assigned to this trip`,
       );
@@ -530,10 +535,8 @@ const autoDeleteAccept = async (req, matchCode, driverId) => {
       );
       const io = req.app.get("io");
       await broadCastTrip(io, "admins", "trip:auto-delete-accept", updatedTrip);
-      const socket1 = getSocketsByUserId(driverId.toString());
-      const socket2 = getSocketsByUserId(find.rider.id.toString());
-      io.to(socket1).emit("trip:auto-delete-accept", updatedTrip);
-      io.to(socket2).emit("trip:auto-delete-accept", updatedTrip);
+      emitToUser(io, driverId, "trip:auto-delete-accept", updatedTrip);
+      emitToUser(io, find.rider.id, "trip:auto-delete-accept", updatedTrip);
       return { text: "auto-delete-accept", code: 2 };
     }
     return { text: "failed", code: 3 };
@@ -564,6 +567,12 @@ const declineTrip = async (req, res) => {
     if (trip.status !== "available") {
       return res.status(400).json({ message: "Trip is no longer available" });
     }
+    const findIndex = trip.applicants.findIndex(
+      (a) => a.id.toString() === req.user.id.toString(),
+    );
+    if (findIndex !== -1) {
+      trip.applicants.splice(findIndex, 1);
+    }
 
     const declined = trip.declinedBy;
     declined.push(req.user.id.toString());
@@ -582,10 +591,8 @@ const declineTrip = async (req, res) => {
 
     const io = req.app.get("io");
     await broadCastTrip(io, "admins", "trip:declined", updatedTrip);
-    const socket1 = getSocketsByUserId(req.user.id.toString());
-    const socket2 = getSocketsByUserId(trip.rider.id.toString());
-    io.to(socket1).emit("trip:declined", updatedTrip);
-    io.to(socket2).emit("trip:declined", updatedTrip);
+    emitToUser(io, req.user.id, "trip:declined", updatedTrip);
+    emitToUser(io, trip.rider.id, "trip:declined", updatedTrip);
 
     return res.status(200).json({
       message: "Trip declined successfully",
@@ -634,10 +641,8 @@ const startTrip = async (req, res) => {
 
     const io = req.app.get("io");
     await broadCastTrip(io, "admins", "trip:started", updatedTrip);
-    const socket1 = getSocketsByUserId(req.user.id.toString());
-    const socket2 = getSocketsByUserId(trip.rider.id.toString());
-    io.to(socket1).emit("trip:started", updatedTrip);
-    io.to(socket2).emit("trip:started", updatedTrip);
+    emitToUser(io, req.user.id, "trip:started", updatedTrip);
+    emitToUser(io, trip.rider.id, "trip:started", updatedTrip);
 
     return res.status(200).json({
       message: "Trip started successfully",
@@ -717,10 +722,8 @@ const endTrip = async (req, res) => {
 
     const io = req.app.get("io");
     await broadCastTrip(io, "admins", "trip:completed", updatedTrip);
-    const socket1 = getSocketsByUserId(trip.rider.id.toString());
-    const socket2 = getSocketsByUserId(trip.driver?.id?.toString());
-    io.to(socket1).emit("trip:completed", updatedTrip);
-    io.to(socket2).emit("trip:completed", updatedTrip);
+    emitToUser(io, trip.rider.id, "trip:completed", updatedTrip);
+    emitToUser(io, trip.driver?.id, "trip:completed", updatedTrip);
 
     return res.status(200).json({
       message: "Trip completed successfully",
@@ -749,8 +752,7 @@ const cancelTrip = async (req, res) => {
     }
     const io = req.app.get("io");
     for (const element of trip.applicants) {
-      const socket = getSocketsByUserId(element?.id?.toString());
-      io.to(socket).emit("trip:cancelled", trip);
+      emitToUser(io, element?.id, "trip:cancelled", trip);
     }
     await broadCastTrip(io, "admins", "trip:cancelled", trip);
     return res
@@ -878,8 +880,7 @@ const giveRating = async (req, res) => {
     );
 
     const io = req.app.get("io");
-    const socket = getSocketsByUserId(driverId);
-    io.to(socket).emit("rating-update", update);
+    emitToUser(io, driverId, "rating-update", update);
     await broadCastTrip(io, "rating-update", "trip:cancelled", update);
     return res.status(200).json({ message: "Success" });
   } catch (error) {

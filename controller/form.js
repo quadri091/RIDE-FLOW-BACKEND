@@ -1,4 +1,5 @@
 const usermodel = require("../model/form-model.js");
+const staffModel = require("../model/staff-model.js");
 const bannedModel = require("../model/banned.js");
 const suspendedModel = require("../model/suspended.js");
 const bcrypt = require("bcryptjs");
@@ -93,7 +94,7 @@ const login = async (req, res) => {
     const verified = await usermodel.findOneAndUpdate(
       { email: user.email },
       { $set: { token } },
-      {returnDocument: "after"},
+      { returnDocument: "after" },
     );
 
     if (!verified) {
@@ -112,15 +113,19 @@ const login = async (req, res) => {
 };
 
 const signup = async (req, res) => {
-  console.log(req.body);
-
   const { email, password, userName, number } = req.body;
   if (!email || !password || !userName || !number) {
     return res.status(400).json({ message: "All fields are required" });
   }
 
   try {
-    const existingUser = await usermodel.findOne({ email });
+    let existingUser = await staffModel.findOne({
+      email,
+    });
+    if (existingUser) {
+      return res.status(400).json({ message: "User already exists" });
+    }
+    existingUser = await usermodel.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ message: "User already exists" });
     }
@@ -160,7 +165,6 @@ const signup = async (req, res) => {
       status: true,
     });
   } catch (error) {
-    console.log(error);
     if (error.code === 11000) {
       // Look inside the keyPattern object to find the field name
       const duplicatedField = Object.keys(error.keyPattern)[0];
@@ -221,7 +225,7 @@ const getCode = async (req, res) => {
     const updatedUser = await usermodel.findOneAndUpdate(
       { email: user.email },
       { $set: { otp: code, otpExpiry: Date.now() + 10 * 60 * 1000 } },
-      {returnDocument: "after"},
+      { returnDocument: "after" },
     );
 
     const send = await sendEmail(user.email, code, user.userName);
@@ -425,7 +429,14 @@ const verifyGoogleToken = async (req, res) => {
     const payload = ticket.getPayload();
     const { sub: userId, email, name, picture: profileImage } = payload;
 
-    let user = await usermodel.findOne({ email });
+    let user = await staffModel.findOne({
+      email,
+    });
+    if (user) {
+      return res.status(400).json({ message: "A user already exists" });
+    }
+
+    user = await usermodel.findOne({ email });
 
     // Existing manual account trying to use Google sign-in
     if (user && user.googleSub == null) {
@@ -444,6 +455,23 @@ const verifyGoogleToken = async (req, res) => {
       const time = formatTimestamp(suspendedUser.suspendedUntil);
       return res.status(403).json({
         message: `User has been suspended till ${time}`,
+      });
+    }
+
+    if (user?.emailIsChanging) {
+      return res.status(400).json({
+        data: user.changeEmail,
+        mailer: user.email,
+        message: `Confirm the email ${user.changeEmail} which you changed`,
+        status: "email-changed",
+      });
+    }
+
+    if (user?.passwordIsForogtten) {
+      return res.status(400).json({
+        data: user.email,
+        message: `Confirm the otp code for changing your password`,
+        status: "password-otp",
       });
     }
 

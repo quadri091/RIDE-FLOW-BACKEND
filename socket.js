@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const usermodel = require("./model/form-model.js");
+const staffModel = require("./model/staff-model.js");
 const tripModel = require("./model/trip-model.js");
 const userSocket = [];
 
@@ -21,6 +22,9 @@ const lifeUpdate = (io) => {
     let user;
     try {
       user = await usermodel.findOne({ email: decoded.email });
+      if (!user) {
+        user = await staffModel.findOne({ email: decoded.email });
+      }
     } catch (err) {
       return socket.disconnect(true);
     }
@@ -59,23 +63,43 @@ const lifeUpdate = (io) => {
     });
 
     socket.on("driverLocation", async ({ lat, lng }) => {
-      const trips = await tripModel.find({
-        "driver.id": req.user.id,
-      });
+      if (typeof lat !== "number" || typeof lng !== "number") return;
 
-      // This updates ALL trips matching the driver's ID
-      await tripModel.updateMany(
-        { "driver.id": req.user.id },
-        { $set: { driverLocation: [lat, lng] } },
-      );
+      try {
+        const trips = await tripModel
+          .find(
+            {
+              "driver.id": userId,
+              status: { $in: ["accepted", "trip started"] },
+            },
+            "matchCode rider.id",
+          )
+          .lean();
 
-      for (const trip of trips) {
-        const socket = getSocketsByUserId(trip.rider.id);
-        io.to(socket).emit("locationUpdate", {
-          matchCode: trip.matchCode,
-          lat,
-          lng,
-        });
+        if (!trips.length) return;
+
+        // 1. push to riders first so it feels instant
+        for (const trip of trips) {
+          emitToUser(io, trip.rider.id, "locationUpdate", {
+            matchCode: trip.matchCode,
+            lat,
+            lng,
+          });
+          io.to("admins").emit("locationUpdate", {
+            matchCode: trip.matchCode,
+            driverId: userId,
+            lat,
+            lng,
+          });
+        }
+
+        // 2. then save it (no await needed for the emit to go out)
+        await tripModel.updateMany(
+          { _id: { $in: trips.map((t) => t._id) } },
+          { $set: { driverLocation: [lat, lng] } },
+        );
+      } catch (err) {
+        console.error("driverLocation error:", err.message);
       }
     });
 
@@ -90,39 +114,28 @@ const lifeUpdate = (io) => {
 
       const caller = userSocket.find((u) => u.socketId === socket.id);
 
-      targetSockets.forEach((socketId) => {
-        io.to(socketId).emit("incomingCall", {
-          callerId: userId,
-          callerName: caller?.name || "Unknown",
-          callerRole: caller?.role || "",
-          offer,
-        });
+      emitToUser(io, targetUserId, "incomingCall", {
+        callerId: userId,
+        callerName: caller?.name || "Unknown",
+        callerRole: caller?.role || "",
+        offer,
       });
     });
 
     // answer call
     socket.on("answerCall", ({ targetUserId, answer }) => {
-      const targetSockets = getSocketsByUserId(targetUserId);
-      targetSockets.forEach((socketId) => {
-        io.to(socketId).emit("callAnswered", { answer });
-      });
+      emitToUser(io, targetUserId, "callAnswered", { answer });
     });
 
     // Step 3 - both sides exchange ICE candidates
     // sender sends: { targetUserId: otherPersonsId, candidate }
     socket.on("iceCandidate", ({ targetUserId, candidate }) => {
-      const targetSockets = getSocketsByUserId(targetUserId);
-      targetSockets.forEach((socketId) => {
-        io.to(socketId).emit("iceCandidate", { candidate });
-      });
+      emitToUser(io, targetUserId, "iceCandidate", { candidate });
     });
 
     // sender sends: { targetUserId: otherPersonsId }
     socket.on("endCall", ({ targetUserId }) => {
-      const targetSockets = getSocketsByUserId(targetUserId);
-      targetSockets.forEach((socketId) => {
-        io.to(socketId).emit("callEnded");
-      });
+      emitToUser(io, targetUserId, "callEnded");
     });
     //
 
@@ -148,4 +161,17 @@ const getSocketsByUserId = (userId) =>
 const getSocketsByRole = (roles) =>
   userSocket.filter((u) => roles.includes(u.role)).map((u) => u.socketId);
 
-module.exports = { lifeUpdate, getSocketsByUserId, getSocketsByRole };
+// emit to every socket of one user; no-op if they're offline
+// (io.to([]) would otherwise broadcast to everyone)
+const emitToUser = (io, userId, event, payload) => {
+  if (!userId) return;
+  const ids = getSocketsByUserId(userId);
+  if (ids.length) io.to(ids).emit(event, payload);
+};
+
+module.exports = {
+  lifeUpdate,
+  getSocketsByUserId,
+  getSocketsByRole,
+  emitToUser,
+};

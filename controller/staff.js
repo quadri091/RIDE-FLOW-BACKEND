@@ -1,4 +1,5 @@
 const staffModel = require("../model/staff-model.js");
+const usermodel = require("../model/form-model.js");
 const bcrypt = require("bcryptjs");
 const cloudinary = require("../utils/claudinary.js");
 const generateOTP = require("otp-generator");
@@ -39,7 +40,14 @@ const createAdmin = async (req, res) => {
   }
 
   try {
-    const existingAdmin = await staffModel.findOne({
+    let existingUser = await usermodel.findOne({
+      email,
+    });
+    if (existingUser) {
+      return res.status(400).json({ message: "A user already exists" });
+    }
+
+    existingAdmin = await staffModel.findOne({
       email,
     });
     if (existingAdmin) {

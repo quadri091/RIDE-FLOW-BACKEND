@@ -3,8 +3,9 @@ const savedModel = require("../model/saved.js");
 const getUsedLocation = async (req, res) => {
   try {
     const find = await savedModel
-      .find({ email: req.user.email })
-      .select("-email")
+      .find({ userId: req.user.id })
+      .select("-userId -__v")
+      .sort({ createdAt: -1 })
       .limit(5);
     if (!find) {
       return res.status(400).json({ message: "Fetching Used Location Failed" });

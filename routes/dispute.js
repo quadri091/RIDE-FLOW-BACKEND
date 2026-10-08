@@ -11,6 +11,7 @@ const {
   getMyDispute,
   resolveDispute,
   deleteDispute,
+  addUrComment,
   addEvidence,
 } = require("../controller/dispute.js");
 
@@ -26,6 +27,7 @@ disputeRouter.get(
   getAllDisputes,
 );
 disputeRouter.get("/get-dispute/:matchCode", authMiddleWare, getDisputeByCode);
+disputeRouter.post("/add-comments/:id", authMiddleWare, addUrComment);
 
 // ops manager only
 disputeRouter.put(

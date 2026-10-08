@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const savedSchema = new mongoose.Schema({
-  email: { type: String, required: true },
+  userId: { type: String, required: true },
   startLocation: {
     coordinates: {
       type: [Number],

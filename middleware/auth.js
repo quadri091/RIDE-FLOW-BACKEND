@@ -8,18 +8,25 @@ const authMiddleWare = async (req, res, next) => {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ message: "Token is required" });
+      return res
+        .status(401)
+        .json({ text: "auth", message: "Token is required" });
     }
     const token = authHeader.split(" ")[1];
-    if (!token) return res.status(400).json({ message: "Token is required" });
+    if (!token)
+      return res
+        .status(400)
+        .json({ text: "auth", message: "Token is required" });
     const jwtVerify = await jwt.verify(token, process.env.jwtSecretKey);
-    if (!jwtVerify) return res.status(400).json({ message: "Invalid Token" });
+    if (!jwtVerify)
+      return res.status(400).json({ text: "auth", message: "Invalid Token" });
 
     find = await usermodel.findOne({ email: jwtVerify.email });
     if (!find) {
       find = await staffmodel.findOne({ email: jwtVerify.email });
     }
-    if (!find) return res.status(400).json({ message: "User not found" });
+    if (!find)
+      return res.status(400).json({ text: "auth", message: "User not found" });
     req.user = find.toObject({ virtuals: true });
     next();
   } catch (error) {
@@ -27,7 +34,10 @@ const authMiddleWare = async (req, res, next) => {
 
     return res
       .status(400)
-      .json({ message: `Token verification failed: ${error.message}` });
+      .json({
+        text: "auth",
+        message: `Token verification failed: ${error.message}`,
+      });
   }
 };
 

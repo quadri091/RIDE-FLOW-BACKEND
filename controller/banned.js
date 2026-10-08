@@ -3,7 +3,7 @@ const suspendedModel = require("../model/suspended.js");
 const usermodel = require("../model/form-model.js");
 const {
   lifeUpdate,
-  getSocketsByUserId,
+  emitToUser,
   getSocketsByRole,
 } = require("../socket.js");
 const broadCastBanned = async (room, io, request) => {
@@ -55,8 +55,7 @@ const banUser = async (req, res) => {
     await suspendedModel.findOneAndDelete({ "user.id": userId });
 
     await broadCastBanned("ban:created", io, ban);
-    const sockets = getSocketsByUserId(userId);
-    io.to(sockets).emit("banned", {
+    emitToUser(io, userId, "banned", {
       message: "You have been banned",
       data: ban,
     });
@@ -92,8 +91,7 @@ const unbanUser = async (req, res) => {
     );
     const io = req.app.get("io");
     await broadCastBanned("ban:deleted", io, ban);
-    const sockets = getSocketsByUserId(userId);
-    io.to(sockets).emit("unbanned", {
+    emitToUser(io, userId, "unbanned", {
       message: "You have been unbanned",
       data: ban,
     });

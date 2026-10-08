@@ -2,7 +2,7 @@ const disputeModel = require("../model/dispute-model.js");
 
 const totaltripModel = require("../model/totaltrip-model.js");
 const { uploadImage } = require("../utils/uploader.js");
-const { getSocketsByUserId } = require("../socket.js");
+const { emitToUser } = require("../socket.js");
 const broadCastDispute = async (room, io, request) => {
   io.to("admins").emit(room, request);
 };
@@ -85,14 +85,8 @@ const createDispute = async (params, checked, io, user) => {
   });
 
   await broadCastDispute("dispute:created", io, dispute);
-  io.to(getSocketsByUserId(trip.rider.id.toString())).emit(
-    "dispute:created",
-    dispute,
-  );
-  io.to(getSocketsByUserId(trip.driver.id.toString())).emit(
-    "dispute:created",
-    dispute,
-  );
+  emitToUser(io, trip.rider.id, "dispute:created", dispute);
+  emitToUser(io, trip.driver.id, "dispute:created", dispute);
 };
 
 const processAll = async (req, res) => {
@@ -142,12 +136,48 @@ const processAll = async (req, res) => {
 const getMyDispute = async (req, res) => {
   try {
     const allMyDispute = await disputeModel.find({
-      $or: [{ "raisedBy.id": req.user.id }, { "receiver.id": req.user.id }],
+      $or: [{ "raisedBy.id": req.user.id }, { "against.id": req.user.id }],
     });
 
     return res
       .status(200)
       .json({ message: "Dispute Fetched", data: allMyDispute });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message });
+  }
+};
+const addUrComment = async (req, res) => {
+  const { id } = req.params;
+  const { message } = req.body;
+  if (!message || !id) {
+    return res.status(400).json({ message: "Message and Id are required" });
+  }
+  try {
+    const dispute = await disputeModel.findById(id);
+    if (!dispute) {
+      return res.status(404).json({ message: "Dispute not found" });
+    }
+    const newComment = {
+      sender: {
+        id: req.user.id,
+        name: req.user.userName,
+        role: req.user.role,
+        profileImage: req.user.profileImage || "",
+      },
+      message,
+    };
+    dispute.comments.push(newComment);
+    await dispute.save();
+    const io = req.app.get("io");
+    emitToUser(io, dispute.raisedBy.id, "dispute:comment", dispute);
+    emitToUser(io, dispute.against.id, "dispute:comment", dispute);
+    await broadCastDispute("dispute:comment", io, dispute);
+
+    return res
+      .status(200)
+      .json({ message: "Comment added successfully", data: dispute });
   } catch (error) {
     return res
       .status(500)
@@ -223,10 +253,8 @@ const updateDisputeStatus = async (req, res) => {
 
     await dispute.save();
     const io = req.app.get("io");
-    const socket1 = getSocketsByUserId(dispute.raisedBy.id.toString());
-    const socket2 = getSocketsByUserId(dispute.against.id.toString());
-    io.to(socket1).emit("dispute:updated", dispute);
-    io.to(socket2).emit("dispute:updated", dispute);
+    emitToUser(io, dispute.raisedBy.id, "dispute:updated", dispute);
+    emitToUser(io, dispute.against.id, "dispute:updated", dispute);
     await broadCastDispute("dispute:updated", req.app.get("io"), dispute);
 
     return res.status(200).json({
@@ -269,10 +297,8 @@ const addEvidence = async (req, res) => {
     await dispute.save();
 
     const io = req.app.get("io");
-    const socket1 = getSocketsByUserId(dispute.raisedBy.id.toString());
-    const socket2 = getSocketsByUserId(dispute.against.id.toString());
-    io.to(socket1).emit("dispute:updated", dispute);
-    io.to(socket2).emit("dispute:updated", dispute);
+    emitToUser(io, dispute.raisedBy.id, "dispute:updated", dispute);
+    emitToUser(io, dispute.against.id, "dispute:updated", dispute);
     await broadCastDispute("dispute:updated", io, dispute);
 
     return res.status(200).json({
@@ -314,10 +340,8 @@ const escalateDispute = async (req, res) => {
     await dispute.save();
 
     const io = req.app.get("io");
-    const socket1 = getSocketsByUserId(dispute.raisedBy.id.toString());
-    const socket2 = getSocketsByUserId(dispute.against.id.toString());
-    io.to(socket1).emit("dispute:escalated", dispute);
-    io.to(socket2).emit("dispute:escalated", dispute);
+    emitToUser(io, dispute.raisedBy.id, "dispute:escalated", dispute);
+    emitToUser(io, dispute.against.id, "dispute:escalated", dispute);
     await broadCastDispute("dispute:escalated", req.app.get("io"), dispute);
 
     return res.status(200).json({
@@ -359,10 +383,8 @@ const resolveDispute = async (req, res) => {
 
     await dispute.save();
     const io = req.app.get("io");
-    const socket1 = getSocketsByUserId(dispute.raisedBy.id.toString());
-    const socket2 = getSocketsByUserId(dispute.against.id.toString());
-    io.to(socket1).emit("dispute:resolved", dispute);
-    io.to(socket2).emit("dispute:resolved", dispute);
+    emitToUser(io, dispute.raisedBy.id, "dispute:resolved", dispute);
+    emitToUser(io, dispute.against.id, "dispute:resolved", dispute);
     await broadCastDispute("dispute:resolved", req.app.get("io"), dispute);
 
     return res.status(200).json({
@@ -388,10 +410,8 @@ const deleteDispute = async (req, res) => {
       return res.status(404).json({ message: "Dispute not found" });
     }
     const io = req.app.get("io");
-    const socket1 = getSocketsByUserId(dispute.raisedBy.id.toString());
-    const socket2 = getSocketsByUserId(dispute.against.id.toString());
-    io.to(socket1).emit("dispute:deleted", dispute);
-    io.to(socket2).emit("dispute:deleted", dispute);
+    emitToUser(io, dispute.raisedBy.id, "dispute:deleted", dispute);
+    emitToUser(io, dispute.against.id, "dispute:deleted", dispute);
     await broadCastDispute("dispute:deleted", req.app.get("io"), dispute);
     return res.status(200).json({
       message: "Dispute deleted successfully",
@@ -410,6 +430,7 @@ module.exports = {
   getDisputeByCode,
   getMyDispute,
   updateDisputeStatus,
+  addUrComment,
   escalateDispute,
   resolveDispute,
   deleteDispute,

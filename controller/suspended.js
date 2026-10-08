@@ -1,7 +1,7 @@
 const suspendedModel = require("../model/suspended.js");
 const bannedModel = require("../model/banned.js");
 const usermodel = require("../model/form-model.js");
-const { getSocketsByUserId } = require("../socket.js");
+const { emitToUser } = require("../socket.js");
 const broadCastSuspended = async (room, io, request) => {
   io.to("admins").emit(room, request);
 };
@@ -72,8 +72,7 @@ const suspendUser = async (req, res) => {
 
     const io = req.app.get("io");
     await broadCastSuspended("suspended:created", io, suspension);
-    const socket1 = getSocketsByUserId(userId.toString());
-    io.to(socket1).emit("suspended", {
+    emitToUser(io, userId, "suspended", {
       message: "You have been suspended",
       data: suspension,
     });
@@ -121,8 +120,7 @@ const unsuspendUser = async (req, res) => {
       req.app.get("io"),
       suspension,
     );
-    const socket1 = getSocketsByUserId(userId.toString());
-    io.to(socket1).emit("unsuspended", {
+    emitToUser(io, userId, "unsuspended", {
       message: "Your suspension has been lifted",
       data: suspension,
     });
@@ -208,8 +206,7 @@ const runAutoUnsuspend = async (userId, io) => {
 
     if (io) {
       await broadCastSuspended("suspended:deleted", io, suspension);
-      const socket1 = getSocketsByUserId(userId.toString());
-      io.to(socket1).emit("unsuspended", {
+      emitToUser(io, userId, "unsuspended", {
         message: "Your suspension has been lifted",
         data: suspension,
       });

@@ -1,13 +1,15 @@
 const usermodel = require("../model/form-model.js");
-const bannedModel = require("../model/banned.js");
 const staffModel = require("../model/staff-model.js");
-const suspendedModel = require("../model/suspended.js");
+const tripModel = require("../model/trip-model.js");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { uploadImage } = require("../utils/uploader.js");
 const generateOTP = require("otp-generator");
-const { getSocketsByUserId } = require("../socket.js");
-const { changeEmail } = require("../utils/send-to-email.js");
+const { emitToUser } = require("../socket.js");
+const {
+  changeEmail,
+  sendForgotPasswordEmail,
+} = require("../utils/send-to-email.js");
 // otp
 const generate = async () => {
   const code = generateOTP.generate(6, {
@@ -48,7 +50,7 @@ const getResetCode = async (req, res) => {
           otpExpiry: Date.now() + 10 * 60 * 1000,
         },
       },
-      {returnDocument: "after"},
+      { returnDocument: "after" },
     );
 
     const send = await sendForgotPasswordEmail(user.email, code, user.userName);
@@ -108,11 +110,18 @@ const resetPassword = async (req, res) => {
   }
 
   try {
+    const find = await usermodel.findOne({ email });
+    if (!find) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    if (!find.passwordIsForogtten) {
+      return res.status(400).json({ message: "Invalid request" });
+    }
     const hashedPassword = await bcrypt.hash(newPassword, 12);
     const update = await usermodel.findOneAndUpdate(
       { email },
       { $set: { password: hashedPassword, passwordIsForogtten: false } },
-      {returnDocument: "after"},
+      { returnDocument: "after" },
     );
     if (!update) {
       return res
@@ -120,8 +129,7 @@ const resetPassword = async (req, res) => {
         .json({ message: "Unathorized User", status: "failed" });
     }
     const io = req.app.get("io");
-    const sockets = getSocketsByUserId(update.id.toString());
-    io.to(sockets).emit("password-updated", "reload");
+    emitToUser(io, update.id, "password-updated", "reload");
 
     return res
       .status(200)
@@ -157,7 +165,7 @@ const changeUserPassword = async (req, res) => {
     const update = await usermodel.findOneAndUpdate(
       { email },
       { $set: { password: hashedPassword } },
-      {returnDocument: "after"},
+      { returnDocument: "after" },
     );
 
     if (!update) {
@@ -167,8 +175,7 @@ const changeUserPassword = async (req, res) => {
     }
 
     const io = req.app.get("io");
-    const sockets = getSocketsByUserId(update.id.toString());
-    io.to(sockets).emit("password-updated", "reload");
+    emitToUser(io, update.id, "password-updated", "reload");
 
     return res.status(200).json({ message: "Password Updated Succesfully" });
   } catch (error) {
@@ -176,38 +183,6 @@ const changeUserPassword = async (req, res) => {
       message: "Internal Server Error",
       error: error.message,
     });
-  }
-};
-
-const uploadPicture = async (req, res) => {
-  const { picture } = req.body;
-  if (!picture) {
-    return res.status(400).json({ message: "Image Is Required" });
-  }
-
-  try {
-    const update = await usermodel
-      .findOneAndUpdate(
-        { email: req.user.email },
-        { $set: { profileImage: image != "failed" ? image : "" } },
-        {returnDocument: "after"},
-      )
-      .select("-password");
-    if (!update) {
-      return res
-        .status(400)
-        .json({ message: "Unathorized User", status: "failed" });
-    }
-
-    const io = req.app.get("io");
-    const sockets = getSocketsByUserId(update.id.toString());
-    io.to(sockets).emit("picture-updated", update);
-    io.to("admins").emit("picture-updated", update);
-    return res.status(200).json({ message: "Picture Changed Successfully" });
-  } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Internal Server Error", error: error.message });
   }
 };
 
@@ -236,7 +211,7 @@ const updateDetails = async (req, res) => {
         {
           $set: object,
         },
-        {returnDocument: "after"},
+        { returnDocument: "after" },
       )
       .select("-password");
     if (!update) {
@@ -249,6 +224,23 @@ const updateDetails = async (req, res) => {
       .status(200)
       .json({ message: "Update Successful", status: "success" });
   } catch (error) {
+    if (error.code === 11000) {
+      // Look inside the keyPattern object to find the field name
+      const duplicatedField = Object.keys(error.keyPattern)[0];
+
+      if (duplicatedField === "email") {
+        return res
+          .status(400)
+          .json({ message: "This email address is already registered." });
+      }
+
+      if (duplicatedField === "number") {
+        return res
+          .status(400)
+          .json({ message: "This phone number is already registered." });
+      }
+    }
+
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -283,7 +275,7 @@ const changeUserEmail = async (req, res) => {
           otpExpiry: Date.now() + 10 * 60 * 1000,
         },
       },
-      {returnDocument: "after"},
+      { returnDocument: "after" },
     );
     await changeEmail(email, code, update.userName);
     res.status(200).json({ message: "Enter The Code Sent To Your Mail" });
@@ -315,7 +307,7 @@ const getMailChangedCode = async (req, res) => {
           otpExpiry: Date.now() + 10 * 60 * 1000,
         },
       },
-      {returnDocument: "after"},
+      { returnDocument: "after" },
     );
     await changeEmail(email, code, update.userName);
     res.status(200).json({ message: "Enter The Code Sent To Your Mail" });
@@ -337,7 +329,7 @@ const emailCode = async (req, res) => {
     if (!find) {
       return res.status(404).json({ message: "User not found" });
     }
-    if (find.otpExpiry < Date.now()) {
+    if (!find.otpExpiry || find.otpExpiry < Date.now()) {
       find.otp = null;
       find.otpExpiry = null;
       await find.save();
@@ -350,28 +342,29 @@ const emailCode = async (req, res) => {
     if (find.changeEmail != email) {
       return res.status(400).json({ message: "Email does not match" });
     }
-    //
+
+    // make sure nobody else took this email in the meantime
+    const taken = await usermodel.findOne({
+      email: find.changeEmail,
+      _id: { $ne: find._id },
+    });
+    if (taken) {
+      return res.status(400).json({ message: "Email is already in use" });
+    }
+
+    // apply everything in ONE save
+    find.email = find.changeEmail;
+    find.changeEmail = "";
+    find.emailIsChanging = false;
     find.otp = null;
     find.otpExpiry = null;
     await find.save();
-    await usermodel.findOneAndUpdate(
-      { email: req.user.email },
-      [
-        {
-          $set: {
-            email: find.changeEmail,
-            changeEmail: "",
-            emailIsChanging: false,
-          },
-        },
-      ],
-      {returnDocument: "after"},
-    );
 
     return res
       .status(200)
       .json({ message: "OTP Verification Successful", status: "logout" });
   } catch (error) {
+    console.log(error);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -379,32 +372,72 @@ const emailCode = async (req, res) => {
 // driver
 const updateLocation = async (req, res) => {
   const { location } = req.body;
-  if (!location) {
+  const coords = location?.coordinates;
+
+  if (
+    !Array.isArray(coords) ||
+    coords.length !== 2 ||
+    coords.some((c) => typeof c !== "number")
+  ) {
     return res
       .status(400)
-      .json({ message: "Location Is Required", status: "failed" });
+      .json({ message: "Valid location is required", status: "failed" });
   }
-
-  if (!req?.user?.id?.toString()) {
+  if (!req?.user?.id) {
     return res.status(400).json({ message: "Unathorized User" });
   }
 
   try {
-    const update = await usermodel.findByIdAndUpdate(
-      req.user.id,
-      { $set: { location } },
-      {returnDocument: "after"},
-    );
+    // user schema stores GeoJSON [lng, lat]
+    const [lng, lat] = coords;
+
+    const update = await usermodel
+      .findByIdAndUpdate(
+        req.user.id,
+        { $set: { location: { type: "Point", coordinates: coords } } },
+        { returnDocument: "after" },
+      )
+      .select("-password -otp -otpExpiry");
 
     if (!update) {
       return res.status(400).json({ message: "Update failed" });
     }
 
     const io = req.app.get("io");
-    io.emit("driver-updated", update);
+
+    // every live trip this driver is part of
+    const trips = await tripModel.find({
+      "driver.id": req.user.id,
+      status: { $in: ["accepted", "trip started"] },
+    });
+
+    if (trips.length) {
+      await tripModel.updateMany(
+        { _id: { $in: trips.map((t) => t._id) } },
+        { $set: { driverLocation: [lat, lng] } },
+      );
+
+      for (const trip of trips) {
+        const payload = {
+          matchCode: trip.matchCode,
+          driverId: req.user.id.toString(),
+          lat,
+          lng,
+        };
+        // rider (all their tabs/devices)
+        emitToUser(io, trip.rider.id, "locationUpdate", payload);
+        // admins
+        io.to("admins").emit("locationUpdate", payload);
+      }
+    }
+
+    // admins only, and without the password hash
+    io.to("admins").emit("driver-updated", update);
+
     return res.status(200).json({ message: "Location Update Successful" });
   } catch (error) {
-    res.status(500).json({ message: "Internal Server Error" });
+    console.log(error);
+    return res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
@@ -419,7 +452,7 @@ const activeSwitch = async (req, res) => {
     const update = await usermodel.findByIdAndUpdate(
       req.user.id,
       { $set: { location, isActive: !req.user.isActive } },
-      {returnDocument: "after"},
+      { returnDocument: "after" },
     );
 
     if (!update) {
@@ -427,7 +460,7 @@ const activeSwitch = async (req, res) => {
     }
 
     const io = req.app.get("io");
-    io.emit("active-driver", update);
+    io.emit("getDrivers", update);
     return res.status(200).json({
       message: `Driver is now ${update.isActive ? "active" : "inactive"}`,
       isActive: update.isActive,
@@ -519,7 +552,6 @@ module.exports = {
   confirmPasswordOTP,
   resetPassword,
   changeUserPassword,
-  uploadPicture,
   activeSwitch,
   getNearbyDrivers,
   getAllActiveDrivers,

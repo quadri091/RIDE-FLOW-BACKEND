@@ -8,7 +8,6 @@ const {
   resetPassword,
   changeUserPassword,
   getMailChangedCode,
-  uploadPicture,
   activeSwitch,
   getNearbyDrivers,
   getAllActiveDrivers,
@@ -24,7 +23,6 @@ actionRouter.post("/verify-reset-password/:email", confirmPasswordOTP);
 actionRouter.post("/apply-reset-password/:email", resetPassword);
 actionRouter.post("/update-location", authMiddleWare, updateLocation);
 actionRouter.post("/change-user-password", authMiddleWare, changeUserPassword);
-actionRouter.post("/update-user-picture", authMiddleWare, uploadPicture);
 actionRouter.post("/update-user-details", authMiddleWare, updateDetails);
 actionRouter.post("/change-user-email", authMiddleWare, changeUserEmail);
 actionRouter.post("/verify-user-email/:userEmail", emailCode);

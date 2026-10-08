@@ -1,12 +1,16 @@
 const usermodel = require("../model/form-model.js");
+const staffModel = require("../model/staff-model.js");
 const messageModel = require("../model/message.js");
-const { getSocketsByUserId } = require("../socket.js");
+const { emitToUser } = require("../socket.js");
 // ─── SEND A MESSAGE ─────────────────────────────────────────────────────────
 // called when rider or driver sends a message
 const fetchReciverDetails = async (req, res, next) => {
   try {
     const { receiverId } = req.body;
-    const driverDetails = await usermodel.findById(receiverId);
+    let driverDetails = await usermodel.findById(receiverId);
+    if (!driverDetails) {
+      driverDetails = await staffModel.findById(receiverId);
+    }
     if (!driverDetails) {
       return res
         .status(400)
@@ -51,38 +55,30 @@ const sendMessage = async (req, res) => {
 
     // notify receiver in real time via socket
     const io = req.app.get("io");
-    const targetSockets = getSocketsByUserId(receiverId);
-    const senderSockets = getSocketsByUserId(req.user.id);
-    const issender = message.sender.id.toString() === req.user.id.toString();
-    targetSockets.forEach((socketId) => {
-      io.to(socketId).emit("newMessage", {
-        person: message.sender,
-        message: message.content,
-        lastMessageAt: message.createdAt,
-        lastMessageFromMe: issender,
-      });
-
-      io.to(socketId).emit("newInbox", {
-        person: message.sender,
-        lastMessage: message.content,
-        lastMessageAt: message.createdAt,
-        lastMessageFromMe: false,
-      });
+    emitToUser(io, receiverId, "newMessage", {
+      person: message.sender,
+      message: message.content,
+      lastMessageAt: message.createdAt,
+      lastMessageFromMe: false,
+    });
+    emitToUser(io, receiverId, "newInbox", {
+      person: message.sender,
+      lastMessage: message.content,
+      lastMessageAt: message.createdAt,
+      lastMessageFromMe: false,
     });
 
-    senderSockets.forEach((socketId) => {
-      io.to(socketId).emit("newMessage", {
-        person: message.receiver,
-        message: message.content,
-        lastMessageAt: message.createdAt,
-        lastMessageFromMe: issender,
-      });
-      io.to(socketId).emit("newInbox", {
-        person: message.receiver,
-        lastMessage: message.content,
-        lastMessageAt: message.createdAt,
-        lastMessageFromMe: true,
-      });
+    emitToUser(io, req.user.id, "newMessage", {
+      person: message.receiver,
+      message: message.content,
+      lastMessageAt: message.createdAt,
+      lastMessageFromMe: true,
+    });
+    emitToUser(io, req.user.id, "newInbox", {
+      person: message.receiver,
+      lastMessage: message.content,
+      lastMessageAt: message.createdAt,
+      lastMessageFromMe: true,
     });
 
     return res.status(200).json({
@@ -133,8 +129,6 @@ const addNewInboxPerson = (req, res) => {
 
   const io = req.app.get("io");
 
-  const userSockets = getSocketsByUserId(req.user.id);
-
   const data = {
     person: {
       id,
@@ -145,9 +139,7 @@ const addNewInboxPerson = (req, res) => {
     comingNew: true,
   };
 
-  userSockets.forEach((socketId) => {
-    io.to(socketId).emit("addNewInboxPerson", data);
-  });
+  emitToUser(io, req.user.id, "addNewInboxPerson", data);
 
   return res.status(200).json({
     message: "Person added to inbox",

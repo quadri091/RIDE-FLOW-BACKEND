@@ -29,6 +29,18 @@ const disputeSchema = new mongoose.Schema({
     name: { type: String, required: true },
     role: { type: String, enum: ["rider", "driver"], required: true },
   },
+  comments: [
+    {
+      sender: {
+        id: { type: mongoose.Schema.Types.ObjectId, required: true },
+        name: { type: String, required: true },
+        role: { type: String, enum: ["rider", "driver", "admin", "superadmin"], required: true },
+        profileImage: { type: String, default: "" },
+      },
+      message: { type: String, required: true },
+      sentAt: { type: Date, default: Date.now },
+    }
+  ],
   evidence: [
     {
       imageUrl: {
