@@ -25,6 +25,12 @@ const banUser = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    if (!["rider", "driver"].includes(user.role)) {
+      return res
+        .status(400)
+        .json({ message: "Only riders or drivers can be banned" });
+    }
+
     const existingBan = await bannedModel.findOne({ "user.id": userId });
     if (existingBan) {
       return res.status(400).json({ message: "User is already banned" });
