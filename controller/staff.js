@@ -132,7 +132,10 @@ const approveUser = async (req, res) => {
 
 const getAllStaff = async (req, res) => {
   try {
-    const staff = await staffModel.find();
+    const filter = req.user.role == "superadmin" ? {} : { role: "admin" };
+    const staff = await staffModel
+      .find(filter)
+      .select("-password -token -otp -otpExpiry");
     return res
       .status(200)
       .json({ message: "Staff fetched successfully", data: staff });

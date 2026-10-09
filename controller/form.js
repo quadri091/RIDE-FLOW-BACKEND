@@ -32,7 +32,10 @@ const login = async (req, res) => {
     return res.status(400).json({ message: "Email and password are required" });
   }
   try {
-    const user = await usermodel.findOne({ email });
+    let user = await usermodel.findOne({ email });
+    if (!user) {
+      user = await usermodel.findOne({ changeEmail: email });
+    }
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }

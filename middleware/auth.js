@@ -32,12 +32,10 @@ const authMiddleWare = async (req, res, next) => {
   } catch (error) {
     console.log(error);
 
-    return res
-      .status(400)
-      .json({
-        text: "auth",
-        message: `Token verification failed: ${error.message}`,
-      });
+    return res.status(400).json({
+      text: "auth",
+      message: `Token verification failed: ${error.message}`,
+    });
   }
 };
 
