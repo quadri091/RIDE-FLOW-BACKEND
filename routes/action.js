@@ -11,6 +11,7 @@ const {
   activeSwitch,
   getNearbyDrivers,
   getAllActiveDrivers,
+  getAllUsers,
   updateTimeOuts,
 } = require("../controller/action");
 const express = require("express");
@@ -34,6 +35,13 @@ actionRouter.post(
   authMiddleWare,
   roleMiddleware("admin", "superadmin"),
   getAllActiveDrivers,
+);
+
+actionRouter.get(
+  "/all-users",
+  authMiddleWare,
+  roleMiddleware("admin", "superadmin"),
+  getAllUsers,
 );
 
 actionRouter.post(

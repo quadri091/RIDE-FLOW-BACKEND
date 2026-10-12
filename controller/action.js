@@ -519,6 +519,21 @@ const getAllActiveDrivers = async (req, res) => {
   }
 };
 
+const getAllUsers = async (req, res) => {
+  try {
+    const users = await usermodel
+      .find()
+      .select("userName role verified profileImage")
+      .sort({ _id: -1 });
+    return res.status(200).json({
+      message: "Users fetched successfully",
+      data: users,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
 const updateTimeOuts = async (req, res) => {
   const { assign, accept } = req.body;
   console.log(assign);
@@ -555,6 +570,7 @@ module.exports = {
   activeSwitch,
   getNearbyDrivers,
   getAllActiveDrivers,
+  getAllUsers,
   updateTimeOuts,
   getMailChangedCode,
 };

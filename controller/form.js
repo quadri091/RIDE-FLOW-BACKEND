@@ -16,6 +16,15 @@ const CLIENT_ID = process.env.googleClientId;
 const { sendEmail } = require("../utils/send-to-email.js");
 const generateOTP = require("otp-generator");
 
+// what admins get on signup events: never the password hash, otp or token
+const signupInfo = (user) => ({
+  _id: user._id,
+  userName: user.userName,
+  role: user.role,
+  verified: user.verified,
+  profileImage: user.profileImage,
+});
+
 const generate = async () => {
   const code = generateOTP.generate(6, {
     digits: true,
@@ -160,7 +169,7 @@ const signup = async (req, res) => {
     }
 
     const io = req.app.get("io");
-    io.to("admins").emit("new:signup", user);
+    io.to("admins").emit("new:signup", signupInfo(user));
 
     return res.status(200).json({
       message: "OTP sent to your email for verification",
@@ -276,7 +285,7 @@ const verifyOTP = async (req, res) => {
     user.otpExpiry = null;
     await user.save();
     const io = req.app.get("io");
-    io.to("admins").emit("new:updated", user);
+    io.to("admins").emit("new:updated", signupInfo(user));
 
     return res
       .status(200)
@@ -365,7 +374,7 @@ const driverSignup = async (req, res) => {
       return res.status(400).json({ message: "Failed to send OTP email" });
     }
     const io = req.app.get("io");
-    io.to("admins").emit("new:signup", user);
+    io.to("admins").emit("new:signup", signupInfo(user));
 
     return res.status(200).json({
       message: "OTP sent to your email for verification",
@@ -523,7 +532,7 @@ const verifyGoogleToken = async (req, res) => {
     await user.save();
 
     if (isNewUser) {
-      io.to("admins").emit("new:signup", user);
+      io.to("admins").emit("new:signup", signupInfo(user));
     }
 
     return res.status(200).json({
