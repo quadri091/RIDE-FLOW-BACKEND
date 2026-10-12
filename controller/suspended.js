@@ -176,6 +176,10 @@ const getSuspensionByUser = async (req, res) => {
 
 // controller/suspended.js
 
+// setTimeout can't wait longer than ~24.8 days (it fires straight away
+// instead), so longer suspensions are re-checked in steps
+const MAX_TIMER_MS = 2147483647;
+
 const scheduleAutoUnsuspend = (userId, suspendedUntil, io) => {
   const msLeft = new Date(suspendedUntil).getTime() - Date.now();
 
@@ -184,15 +188,24 @@ const scheduleAutoUnsuspend = (userId, suspendedUntil, io) => {
   }
 
   setTimeout(() => {
-    runAutoUnsuspend(userId, io);
-  }, msLeft);
+    scheduleAutoUnsuspend(userId, suspendedUntil, io);
+  }, Math.min(msLeft, MAX_TIMER_MS));
 };
 
+// Lifts the user's suspension only if it has run out (or its record is
+// gone). Returns the suspension if it's still running, otherwise null.
+// Timers are lost whenever the server sleeps or restarts, so login also
+// calls this instead of trusting the `suspended` flag.
 const runAutoUnsuspend = async (userId, io) => {
   try {
-    const suspension = await suspendedModel.findOneAndDelete({
-      "user.id": userId,
-    });
+    const suspension = await suspendedModel.findOne({ "user.id": userId });
+    if (suspension && new Date(suspension.suspendedUntil) > new Date()) {
+      return suspension;
+    }
+
+    const removed =
+      suspension &&
+      (await suspendedModel.findOneAndDelete({ _id: suspension._id }));
 
     await usermodel.findByIdAndUpdate(
       userId,
@@ -200,23 +213,23 @@ const runAutoUnsuspend = async (userId, io) => {
       { returnDocument: "after" },
     );
 
-    if (!suspension) {
-      console.log(`No active suspension found for user ${userId}`);
-    }
-
-    if (io) {
-      await broadCastSuspended("suspended:deleted", io, suspension);
+    if (removed && io) {
+      await broadCastSuspended("suspended:deleted", io, removed);
       emitToUser(io, userId, "unsuspended", {
         message: "Your suspension has been lifted",
-        data: suspension,
+        data: removed,
       });
     }
 
-    console.log(
-      `Auto-unsuspended user ${userId} at ${new Date().toISOString()}`,
-    );
+    if (removed) {
+      console.log(
+        `Auto-unsuspended user ${userId} at ${new Date().toISOString()}`,
+      );
+    }
+    return null;
   } catch (error) {
     console.error(`Failed to auto-unsuspend user ${userId}:`, error.message);
+    return null;
   }
 };
 
@@ -249,4 +262,5 @@ module.exports = {
   getAllSuspended,
   getSuspensionByUser,
   getAllSuspendedAndStartUnsuspend,
+  runAutoUnsuspend,
 };

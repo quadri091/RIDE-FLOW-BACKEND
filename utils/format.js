@@ -1,16 +1,22 @@
+// the server runs in UTC (Render), so times shown to users are formatted
+// in the app's own timezone instead of the server's
+const TIME_ZONE = "Africa/Lagos";
+
 function formatTimestamp(timestamp) {
-  const d = new Date(timestamp);
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  })
+    .formatToParts(new Date(timestamp))
+    .forEach((part) => (parts[part.type] = part.value));
 
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-
-  let hours = d.getHours();
-  const minutes = String(d.getMinutes()).padStart(2, "0");
-  const ampm = hours >= 12 ? "PM" : "AM";
-  hours = hours % 12 || 12;
-
-  return `${mm}/${dd}/${yyyy} - ${String(hours).padStart(2, "0")}:${minutes}${ampm}`;
+  return `${parts.month}/${parts.day}/${parts.year} - ${parts.hour}:${parts.minute}${parts.dayPeriod.toUpperCase()}`;
 }
 
 module.exports = formatTimestamp;

@@ -15,6 +15,7 @@ const client = new OAuth2Client(
 const CLIENT_ID = process.env.googleClientId;
 const { sendEmail } = require("../utils/send-to-email.js");
 const generateOTP = require("otp-generator");
+const { runAutoUnsuspend } = require("./suspended.js");
 
 // what admins get on signup events: never the password hash, otp or token
 const signupInfo = (user) => ({
@@ -84,15 +85,14 @@ const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid password" });
     }
     if (user.suspended) {
-      const find = await suspendedModel.findOne({ "user.id": user.id });
+      // lifts it here if it has already run out (or the record is gone)
+      const find = await runAutoUnsuspend(user.id, req.app.get("io"));
       if (find) {
         const time = formatTimestamp(find.suspendedUntil);
         return res.status(403).json({
           message: `User has been suspended till ${time}`,
         });
       }
-      // flag left behind without a suspension record: clear it, let them in
-      await usermodel.updateOne({ _id: user._id }, { $set: { suspended: false } });
       user.suspended = false;
     }
 
@@ -467,7 +467,14 @@ const verifyGoogleToken = async (req, res) => {
       return res.status(403).json({ message: "User has been banned" });
     }
 
-    const suspendedUser = await suspendedModel.findOne({ "user.email": email });
+    let suspendedUser = await suspendedModel.findOne({ "user.email": email });
+    if (suspendedUser) {
+      // lifts it here if it has already run out
+      suspendedUser = await runAutoUnsuspend(
+        suspendedUser.user.id,
+        req.app.get("io"),
+      );
+    }
     if (suspendedUser) {
       const time = formatTimestamp(suspendedUser.suspendedUntil);
       return res.status(403).json({
