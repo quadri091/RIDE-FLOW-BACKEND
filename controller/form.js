@@ -85,10 +85,15 @@ const login = async (req, res) => {
     }
     if (user.suspended) {
       const find = await suspendedModel.findOne({ "user.id": user.id });
-      const time = formatTimestamp(find.suspendedUntil);
-      return res.status(403).json({
-        message: `User has been suspended till ${time}`,
-      });
+      if (find) {
+        const time = formatTimestamp(find.suspendedUntil);
+        return res.status(403).json({
+          message: `User has been suspended till ${time}`,
+        });
+      }
+      // flag left behind without a suspension record: clear it, let them in
+      await usermodel.updateOne({ _id: user._id }, { $set: { suspended: false } });
+      user.suspended = false;
     }
 
     if (user.banned) {
