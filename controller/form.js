@@ -568,26 +568,37 @@ const sendSupport = async (req, res) => {
     return res.status(400).json({ message: "Your message is too long" });
   }
 
-  const ip = String(req.headers["x-forwarded-for"] || req.ip).split(",")[0];
-  if (supportTimes[ip] && Date.now() - supportTimes[ip] < 60000) {
-    return res.status(429).json({
-      message: "Please wait a minute before sending another message",
-    });
-  }
-  supportTimes[ip] = Date.now();
+  try {
+    const ip = String(req.headers["x-forwarded-for"] || req.ip).split(",")[0];
+    if (supportTimes[ip] && Date.now() - supportTimes[ip] < 60000) {
+      return res.status(429).json({
+        message: "Please wait a minute before sending another message",
+      });
+    }
+    supportTimes[ip] = Date.now();
 
-  const sent = await sendSupportEmail(text.trim(), formatTimestamp(Date.now()));
-  if (!sent.success) {
-    delete supportTimes[ip];
+    const sent = await sendSupportEmail(
+      text.trim(),
+      formatTimestamp(Date.now()),
+    );
+    if (!sent.success) {
+      delete supportTimes[ip];
+      return res
+        .status(500)
+        .json({ message: "Your message was not sent. Please try again" });
+    }
+
+    return res.status(200).json({
+      message: "Message sent. We'll get back to you soon",
+      status: true,
+    });
+  } catch (error) {
+    console.log(error.message);
+
     return res
       .status(500)
-      .json({ message: "Your message was not sent. Please try again" });
+      .json({ message: "Server error", error: error.message });
   }
-
-  return res.status(200).json({
-    message: "Message sent. We'll get back to you soon",
-    status: true,
-  });
 };
 
 module.exports = {
