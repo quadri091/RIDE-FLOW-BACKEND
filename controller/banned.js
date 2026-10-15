@@ -50,7 +50,6 @@ const banUser = async (req, res) => {
         name: req.user.userName,
       },
     });
-    // the suspension record is removed below, so its flag goes too
     await usermodel.findByIdAndUpdate(
       userId,
       { $set: { banned: true, suspended: false } },

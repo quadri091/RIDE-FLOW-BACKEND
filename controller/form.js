@@ -13,11 +13,10 @@ const client = new OAuth2Client(
   "postmessage",
 );
 const CLIENT_ID = process.env.googleClientId;
-const { sendEmail } = require("../utils/send-to-email.js");
+const { sendEmail, sendSupportEmail } = require("../utils/send-to-email.js");
 const generateOTP = require("otp-generator");
 const { runAutoUnsuspend } = require("./suspended.js");
 
-// what admins get on signup events: never the password hash, otp or token
 const signupInfo = (user) => ({
   _id: user._id,
   userName: user.userName,
@@ -85,7 +84,6 @@ const login = async (req, res) => {
       return res.status(401).json({ message: "Invalid password" });
     }
     if (user.suspended) {
-      // lifts it here if it has already run out (or the record is gone)
       const find = await runAutoUnsuspend(user.id, req.app.get("io"));
       if (find) {
         const time = formatTimestamp(find.suspendedUntil);
@@ -469,7 +467,6 @@ const verifyGoogleToken = async (req, res) => {
 
     let suspendedUser = await suspendedModel.findOne({ "user.email": email });
     if (suspendedUser) {
-      // lifts it here if it has already run out
       suspendedUser = await runAutoUnsuspend(
         suspendedUser.user.id,
         req.app.get("io"),
@@ -559,7 +556,42 @@ const verifyGoogleToken = async (req, res) => {
   }
 };
 
+const supportTimes = {};
+
+const sendSupport = async (req, res) => {
+  const { text } = req.body;
+
+  if (typeof text != "string" || !text.trim()) {
+    return res.status(400).json({ message: "Please write your message" });
+  }
+  if (text.length > 3000) {
+    return res.status(400).json({ message: "Your message is too long" });
+  }
+
+  const ip = String(req.headers["x-forwarded-for"] || req.ip).split(",")[0];
+  if (supportTimes[ip] && Date.now() - supportTimes[ip] < 60000) {
+    return res.status(429).json({
+      message: "Please wait a minute before sending another message",
+    });
+  }
+  supportTimes[ip] = Date.now();
+
+  const sent = await sendSupportEmail(text.trim(), formatTimestamp(Date.now()));
+  if (!sent.success) {
+    delete supportTimes[ip];
+    return res
+      .status(500)
+      .json({ message: "Your message was not sent. Please try again" });
+  }
+
+  return res.status(200).json({
+    message: "Message sent. We'll get back to you soon",
+    status: true,
+  });
+};
+
 module.exports = {
+  sendSupport,
   signup,
   login,
   driverSignup,

@@ -176,10 +176,6 @@ const getSuspensionByUser = async (req, res) => {
 
 // controller/suspended.js
 
-// setTimeout can't wait longer than ~24.8 days (it fires straight away
-// instead), so longer suspensions are re-checked in steps
-const MAX_TIMER_MS = 2147483647;
-
 const scheduleAutoUnsuspend = (userId, suspendedUntil, io) => {
   const msLeft = new Date(suspendedUntil).getTime() - Date.now();
 
@@ -189,13 +185,9 @@ const scheduleAutoUnsuspend = (userId, suspendedUntil, io) => {
 
   setTimeout(() => {
     scheduleAutoUnsuspend(userId, suspendedUntil, io);
-  }, Math.min(msLeft, MAX_TIMER_MS));
+  }, Math.min(msLeft, 2147483647));
 };
 
-// Lifts the user's suspension only if it has run out (or its record is
-// gone). Returns the suspension if it's still running, otherwise null.
-// Timers are lost whenever the server sleeps or restarts, so login also
-// calls this instead of trusting the `suspended` flag.
 const runAutoUnsuspend = async (userId, io) => {
   try {
     const suspension = await suspendedModel.findOne({ "user.id": userId });
@@ -203,9 +195,10 @@ const runAutoUnsuspend = async (userId, io) => {
       return suspension;
     }
 
-    const removed =
-      suspension &&
-      (await suspendedModel.findOneAndDelete({ _id: suspension._id }));
+    let removed = null;
+    if (suspension) {
+      removed = await suspendedModel.findOneAndDelete({ _id: suspension._id });
+    }
 
     await usermodel.findByIdAndUpdate(
       userId,

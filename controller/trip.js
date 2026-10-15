@@ -5,6 +5,8 @@ const axios = require("axios");
 const mongoose = require("mongoose");
 const usermodel = require("../model/form-model.js");
 const { emitToUser } = require("../socket.js");
+const { distanceInMeters, showDistance } = require("../utils/distance.js");
+const maxTripDistance = 300;
 const generateMatchCode = async () => {
   const lastTrip = await totaltripModel
     .findOne()
@@ -605,10 +607,15 @@ const declineTrip = async (req, res) => {
 };
 
 const startTrip = async (req, res) => {
-  const { matchCode } = req.body;
+  const { matchCode, lat, lng } = req.body;
 
   if (!matchCode) {
     return res.status(400).json({ message: "Match code is required" });
+  }
+  if (lat == null || lng == null) {
+    return res
+      .status(400)
+      .json({ message: "Turn on your location to start the trip" });
   }
 
   try {
@@ -625,6 +632,16 @@ const startTrip = async (req, res) => {
 
     if (trip.status !== "accepted") {
       return res.status(400).json({ message: "Trip is not ready to start" });
+    }
+
+    const distance = distanceInMeters(
+      [Number(lat), Number(lng)],
+      trip.startLocation.coordinates,
+    );
+    if (distance > maxTripDistance) {
+      return res.status(400).json({
+        message: `You are ${showDistance(distance)} away from the pickup. Get within ${maxTripDistance}m to start the trip`,
+      });
     }
 
     const updatedTrip = await tripModel.findOneAndUpdate(
@@ -691,10 +708,15 @@ const fetchDriverDetails = async (req, res) => {
 };
 
 const endTrip = async (req, res) => {
-  const { matchCode } = req.body;
+  const { matchCode, lat, lng } = req.body;
 
   if (!matchCode) {
     return res.status(400).json({ message: "Match code is required" });
+  }
+  if (lat == null || lng == null) {
+    return res
+      .status(400)
+      .json({ message: "Turn on your location to end the trip" });
   }
 
   try {
@@ -711,6 +733,20 @@ const endTrip = async (req, res) => {
       return res
         .status(403)
         .json({ message: "Only the rider or driver can end the trip" });
+    }
+
+    if (trip.status !== "trip started") {
+      return res.status(400).json({ message: "Trip has not started yet" });
+    }
+
+    const distance = distanceInMeters(
+      [Number(lat), Number(lng)],
+      trip.endLocation.coordinates,
+    );
+    if (distance > maxTripDistance) {
+      return res.status(400).json({
+        message: `You are ${showDistance(distance)} away from the drop-off. Get within ${maxTripDistance}m to end the trip`,
+      });
     }
 
     const updatedTrip = await totaltripModel.findOneAndUpdate(
