@@ -11,6 +11,31 @@ const transporter = nodemailer.createTransport({
   socketTimeout: 20000,
 });
 
+const sendMail = async (mailOptions) => {
+  if (!process.env.BREVO_API_KEY) {
+    return transporter.sendMail(mailOptions);
+  }
+
+  const request = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "api-key": process.env.BREVO_API_KEY,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { name: "RideFlow", email: process.env.email },
+      to: [{ email: mailOptions.to }],
+      subject: mailOptions.subject,
+      htmlContent: mailOptions.html,
+    }),
+  });
+
+  if (!request.ok) {
+    throw new Error(`Brevo ${request.status}: ${await request.text()}`);
+  }
+  return request.json();
+};
+
 /**
  * Shared RideFlow email shell — cream background, white rounded card,
  * black type, green accent — matching the app's light UI.
@@ -206,7 +231,7 @@ const sendEmail = async (email, code, username) => {
   };
 
   try {
-    await transporter.sendMail(mailOptions);
+    await sendMail(mailOptions);
     return { success: true, text: "Mail sent" }; // Simplified return object
   } catch (error) {
     console.error("Nodemailer error: ", error);
@@ -241,7 +266,7 @@ const sendForgotPasswordEmail = async (email, code, username) => {
   };
 
   try {
-    const sentEmail = await transporter.sendMail(mailOptions);
+    const sentEmail = await sendMail(mailOptions);
     if (sentEmail) {
       return { text: "Mail sent", status: "success" };
     }
@@ -278,7 +303,7 @@ const sendAdminEmail = async (email, code, username, role) => {
   };
 
   try {
-    const sentEmail = await transporter.sendMail(mailOptions);
+    const sentEmail = await sendMail(mailOptions);
     if (sentEmail) {
       return { text: "Mail sent", status: "success" };
     }
@@ -315,112 +340,13 @@ const changeEmail = async (email, code, username) => {
   };
 
   try {
-    const sentEmail = await transporter.sendMail(mailOptions);
+    const sentEmail = await sendMail(mailOptions);
     if (sentEmail) {
       return { text: "Mail sent", status: "success" };
     }
   } catch (error) {
     console.log(error);
     return { text: "Failed to send mail", status: "fail" };
-  }
-};
-
-const supportEmail = "adebayoq123456@gmail.com";
-
-const buildSupportTemplate = (text, time) => {
-  const cleanText = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\n/g, "<br />");
-
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RideFlow - Support Message</title>
-  </head>
-  <body style="margin:0;padding:0;font-family:'Helvetica Neue',Arial,sans-serif;background-color:#faf8f2;">
-    <table role="presentation" style="width:100%;border-collapse:collapse;background-color:#faf8f2;">
-      <tr>
-        <td align="center" style="padding:48px 20px;">
-          <table role="presentation" style="max-width:520px;width:100%;border-collapse:collapse;">
-            <tr>
-              <td style="padding-bottom:28px;text-align:center;">
-                <table role="presentation" style="margin:0 auto;">
-                  <tr>
-                    <td style="padding-right:10px;">
-                      <div style="width:38px;height:38px;border-radius:50%;background-color:#000000;">
-                        <table role="presentation" style="width:100%;height:100%;"><tr><td align="center" valign="middle">${logoSvg}</td></tr></table>
-                      </div>
-                    </td>
-                    <td>
-                      <span style="font-size:20px;font-weight:700;color:#111111;letter-spacing:-0.2px;">RIDE-FLOW</span>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-            <tr>
-              <td style="background-color:#ffffff;border-radius:20px;border:1px solid #ebebea;padding:40px;">
-                <div style="text-align:center;">
-                  <span style="display:inline-block;padding:6px 14px;border-radius:15px;background-color:#e5f0e6;border:0.8px solid #00b749ae;color:#00b74a;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">
-                    Support Message
-                  </span>
-                  <h1 style="margin:20px 0 10px 0;color:#111111;font-size:26px;font-weight:700;letter-spacing:-0.5px;">
-                    Someone needs help
-                  </h1>
-                  <p style="margin:0 0 28px 0;color:#838380;font-size:15px;line-height:23px;">
-                    A message just came in from RideFlow. Reply using the details they left in it.
-                  </p>
-                </div>
-                <table role="presentation" style="width:100%;background-color:#f9f9f9;border-radius:16px;border:1px solid #d6d6d6;">
-                  <tr>
-                    <td style="padding:20px 22px;">
-                      <p style="margin:0 0 10px 0;color:#626262;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;">
-                        Message
-                      </p>
-                      <p style="margin:0;color:#111111;font-size:15px;line-height:24px;">
-                        ${cleanText}
-                      </p>
-                    </td>
-                  </tr>
-                </table>
-                <p style="margin:20px 0 0 0;color:#9a9890;font-size:13px;text-align:center;">
-                  Received ${time}
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:28px 20px 0 20px;text-align:center;">
-                <p style="margin:0;color:#c2c0b8;font-size:12px;">
-                  © 2026 RideFlow. All rights reserved.
-                </p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`;
-};
-
-const sendSupportEmail = async (text, time) => {
-  const mailOptions = {
-    from: process.env.email,
-    to: supportEmail,
-    subject: "New RideFlow support message",
-    html: buildSupportTemplate(text, time),
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    return { success: true, text: "Mail sent" };
-  } catch (error) {
-    console.log(error);
-    return { success: false, text: "Failed to send mail" };
   }
 };
 
@@ -434,5 +360,4 @@ module.exports = {
   changeEmail,
   sendAdminEmail,
   sendForgotPasswordEmail,
-  sendSupportEmail,
 };

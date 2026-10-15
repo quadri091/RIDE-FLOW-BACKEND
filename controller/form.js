@@ -13,7 +13,7 @@ const client = new OAuth2Client(
   "postmessage",
 );
 const CLIENT_ID = process.env.googleClientId;
-const { sendEmail, sendSupportEmail } = require("../utils/send-to-email.js");
+const { sendEmail } = require("../utils/send-to-email.js");
 const generateOTP = require("otp-generator");
 const { runAutoUnsuspend } = require("./suspended.js");
 
@@ -556,53 +556,7 @@ const verifyGoogleToken = async (req, res) => {
   }
 };
 
-const supportTimes = {};
-
-const sendSupport = async (req, res) => {
-  const { text } = req.body;
-
-  if (typeof text != "string" || !text.trim()) {
-    return res.status(400).json({ message: "Please write your message" });
-  }
-  if (text.length > 3000) {
-    return res.status(400).json({ message: "Your message is too long" });
-  }
-
-  try {
-    const ip = String(req.headers["x-forwarded-for"] || req.ip).split(",")[0];
-    if (supportTimes[ip] && Date.now() - supportTimes[ip] < 60000) {
-      return res.status(429).json({
-        message: "Please wait a minute before sending another message",
-      });
-    }
-    supportTimes[ip] = Date.now();
-
-    const sent = await sendSupportEmail(
-      text.trim(),
-      formatTimestamp(Date.now()),
-    );
-    if (!sent.success) {
-      delete supportTimes[ip];
-      return res
-        .status(500)
-        .json({ message: "Your message was not sent. Please try again" });
-    }
-
-    return res.status(200).json({
-      message: "Message sent. We'll get back to you soon",
-      status: true,
-    });
-  } catch (error) {
-    console.log(error.message);
-
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
-  }
-};
-
 module.exports = {
-  sendSupport,
   signup,
   login,
   driverSignup,
